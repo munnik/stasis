@@ -276,6 +276,69 @@ fn no_notification_text_ignores_notify_seconds_before() {
 }
 
 #[test]
+fn compositor_idled_without_resumed_fires_resume_and_restarts_window() {
+    // Regression test for the niri workaround: when CompositorIdled arrives
+    // while debounce is already cleared (no CompositorResumed in between),
+    // stasis must (a) emit resume commands for any previously-fired step and
+    // (b) restart the idle window from the new Idled timestamp.
+
+    let mut s = step(PlanStepKind::Dpms, 5, "dpms_off");
+    s.resume_command = Some("dpms_on".to_string());
+
+    let mut mgr = Manager::new(cfg_with_plan(vec![s]));
+    let mut state = State::new(0);
+    state.set_plan_source(PlanSource::Desktop);
+
+    // First idle window: step fires at t=5000.
+    enter_idle(&mut mgr, &mut state, 0);
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 5000 })
+        .unwrap();
+    assert_eq!(
+        actions,
+        vec![Action::RunCommand {
+            command: "dpms_off".to_string()
+        }]
+    );
+    // debounce_pending is still false; no CompositorResumed arrives (niri scenario).
+
+    // Second CompositorIdled without any CompositorResumed in between.
+    let actions = mgr
+        .handle_event(&mut state, Event::CompositorIdled { now_ms: 10_000 })
+        .unwrap();
+
+    // (a) Resume command must fire for the previously-fired Dpms step.
+    assert!(
+        actions.iter().any(|a| matches!(
+            a,
+            Action::RunResumeCommand { command } if command == "dpms_on"
+        )),
+        "expected RunResumeCommand(dpms_on) in {actions:?}"
+    );
+
+    // (b) Idle window restarts from the new Idled timestamp.
+    assert_eq!(state.step_base_ms(), 10_000);
+    assert_eq!(state.step_index(), 0);
+
+    // Step must not fire before new_base + timeout.
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 14_999 })
+        .unwrap();
+    assert!(actions.is_empty());
+
+    // Step fires exactly at 10_000 + 5_000 = 15_000.
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 15_000 })
+        .unwrap();
+    assert_eq!(
+        actions,
+        vec![Action::RunCommand {
+            command: "dpms_off".to_string()
+        }]
+    );
+}
+
+#[test]
 fn browser_inhibit_stays_active_until_explicit_inactive_edge() {
     let plan = vec![step(PlanStepKind::Dpms, 1, "dpms")];
 

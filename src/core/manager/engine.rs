@@ -354,12 +354,19 @@ impl Manager {
                     return Ok(out);
                 }
 
-                // We have entered true idle per compositor.
-                // This is the transition from "waiting for idle" -> "idle active".
-                if state.debounce_pending() && !state.paused() {
-                    state.set_debounce_pending(false);
+                if !state.paused() {
+                    // If debounce is already cleared, this Idled edge arrived without a
+                    // prior CompositorResumed. Some compositors (e.g. niri) do not send
+                    // CompositorResumed reliably. Treat the missing Resumed as implicit
+                    // activity so resume commands fire and the cycle resets before timing
+                    // the new idle window.
+                    if !state.debounce_pending() {
+                        self.handle_activity_like_event(state, &cfg, now_ms, &mut out);
+                    }
 
+                    // We have entered true idle per compositor.
                     // Start timing from *idle start*, not from last activity.
+                    state.set_debounce_pending(false);
                     state.set_step_base_ms(now_ms);
 
                     // Restart notify scheduling relative to this idle episode.

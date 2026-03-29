@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`stasis info` adds D-Bus inhibition info**
   - Adds a line to the human-readable status/tooltip about the current state of D-Bus based inhibition.
 
+### Fixes
+
+- **Reset idle timer when compositor sends multiple CompositorIdled events without a CompositorResumed**
+  - This fixes the behavior on niri where Stasis would just ignore keyboard and mouse activity and lock the screen anyway
+
 ### Notes
 
 - **Web Discord limitation (no mic attached)**
