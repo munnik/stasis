@@ -137,6 +137,7 @@ fn parse_config_file(rc: &RuneConfig) -> Result<ConfigFile, String> {
 
             // scalars/lists under default
             cfg.pre_suspend_command = opt_nullable_string(rc, "default.pre_suspend_command")?;
+            cfg.prepare_sleep_command = opt_nullable_string(rc, "default.prepare_sleep_command")?;
 
             cfg.monitor_media = rc.get_or("default.monitor_media", false);
             cfg.ignore_remote_media = rc.get_or("default.ignore_remote_media", false);
@@ -225,6 +226,7 @@ fn parse_plan_block(
                 | "enable_loginctl"
                 | "enable_dbus_inhibit"
                 | "pre_suspend_command"
+                | "prepare_sleep_command"
                 | "monitor_media"
                 | "ignore_remote_media"
                 | "media_blacklist"
@@ -384,6 +386,7 @@ fn parse_profiles(rc: &RuneConfig) -> Result<Vec<Profile>, String> {
         pc.enable_loginctl = opt_bool(rc, format!("{name}.enable_loginctl"))?;
         pc.enable_dbus_inhibit = opt_bool(rc, format!("{name}.enable_dbus_inhibit"))?;
         pc.pre_suspend_command = opt_nullable_string2(rc, format!("{name}.pre_suspend_command"))?;
+        pc.prepare_sleep_command = opt_nullable_string2(rc, format!("{name}.prepare_sleep_command"))?;
 
         pc.monitor_media = opt_bool(rc, format!("{name}.monitor_media"))?;
         pc.ignore_remote_media = opt_bool(rc, format!("{name}.ignore_remote_media"))?;
@@ -619,6 +622,7 @@ fn log_config_debug(cfg_file: &ConfigFile) {
     eventline::debug!("  enable_loginctl = {:?}", cfg.enable_loginctl);
     eventline::debug!("  enable_dbus_inhibit = {:?}", cfg.enable_dbus_inhibit);
     eventline::debug!("  pre_suspend_command = {:?}", cfg.pre_suspend_command);
+    eventline::debug!("  prepare_sleep_command = {:?}", cfg.prepare_sleep_command);
 
     eventline::debug!("  lid_close_action = {:?}", cfg.lid_close_action);
     eventline::debug!("  lid_open_action  = {:?}", cfg.lid_open_action);

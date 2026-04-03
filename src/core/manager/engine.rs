@@ -201,6 +201,13 @@ impl Manager {
             Event::PrepareForSleep { .. } => {
                 state.set_system_paused(true);
                 self.refresh_paused(state, now_ms);
+
+                if let Some(cmd) = &cfg.prepare_sleep_command {
+                    let c = cmd.trim().to_string();
+                    if !c.is_empty() {
+                        out.push(Action::RunCommand { command: c });
+                    }
+                }
             }
 
             Event::ResumedFromSleep { .. } => {
