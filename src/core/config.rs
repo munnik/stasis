@@ -123,6 +123,7 @@ pub struct Config {
     pub enable_loginctl: bool,
     pub enable_dbus_inhibit: bool,
     pub pre_suspend_command: Option<String>,
+    pub prepare_sleep_command: Option<String>,
 
     /// Shell command to run immediately when the lid is closed (if any).
     pub lid_close_action: Option<String>,
@@ -172,6 +173,7 @@ impl Config {
             enable_loginctl: false,
             enable_dbus_inhibit: true,
             pre_suspend_command: None,
+            prepare_sleep_command: None,
 
             lid_close_action: None,
             lid_open_action: None,
@@ -334,6 +336,7 @@ pub struct PartialConfig {
     pub enable_loginctl: Option<bool>,
     pub enable_dbus_inhibit: Option<bool>,
     pub pre_suspend_command: Option<Option<String>>,
+    pub prepare_sleep_command: Option<Option<String>>,
 
     /// `None` = no override; `Some(None)` = clear; `Some(Some(cmd))` = set command.
     pub lid_close_action: Option<Option<String>>,
@@ -393,6 +396,9 @@ impl PartialConfig {
 
         if let Some(v) = &self.pre_suspend_command {
             base.pre_suspend_command = v.clone();
+        }
+        if let Some(v) = &self.prepare_sleep_command {
+            base.prepare_sleep_command = v.clone();
         }
 
         if let Some(v) = &self.lid_close_action {

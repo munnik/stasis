@@ -24,6 +24,10 @@ default:
   ignore_remote_media true
   debounce_seconds 5
 
+  # Shell command to run immediately when logind emits PrepareForSleep(true).
+  # Unlike `pre_suspend_command`, this triggers when sleep is initiated externally.
+  # prepare_sleep_command "hyprlock"
+
   # Lid actions (optional, laptop only)
   #
   # Shell commands run immediately on lid close or open.

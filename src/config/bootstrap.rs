@@ -112,6 +112,18 @@ default:
   ]
 
   # -----------------------------
+  # Prepare sleep command
+  # -----------------------------
+  # Shell command to run immediately when logind emits PrepareForSleep(true).
+  # Unlike `pre_suspend_command`, this triggers when sleep is initiated
+  # externally (e.g., closing lid, systemctl suspend), not by stasis idle plan.
+  #
+  # Examples:
+  #   prepare_sleep_command "swaylock -f"
+  # -----------------------------
+  #prepare_sleep_command ""
+
+  # -----------------------------
   # Lid actions (LAPTOP ONLY)
   #
   # Shell commands run immediately on lid close or open.

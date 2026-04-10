@@ -95,6 +95,11 @@ List of patterns that inhibit idle behavior while active (case-insensitive).
 Regular expressions are allowed.
 
 .TP
+.B prepare_sleep_command \fICOMMAND\fR | ""
+Optional command run immediately when logind emits PrepareForSleep(true).
+This triggers when sleep is initiated externally (e.g., closing lid, systemctl suspend), not by stasis's idle plan.
+
+.TP
 .B lid_close_action \fICOMMAND\fR | ""
 Optional command run immediately when the laptop lid closes.
 Setting this to an empty string (\fB""\fR) clears any inherited lid-close action.
