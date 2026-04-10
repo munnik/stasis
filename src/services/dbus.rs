@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 use zbus::{Connection, MatchRule, Proxy};
 
 use crate::core::events::Event;
@@ -506,7 +506,10 @@ async fn tracker_clear_portal_handle(
 }
 
 fn browser_source_capture_active_now() -> bool {
-    let out = match Command::new("pactl").args(["list", "source-outputs"]).output() {
+    let out = match Command::new("pactl")
+        .args(["list", "source-outputs"])
+        .output()
+    {
         Ok(o) if o.status.success() => o,
         _ => return false,
     };
@@ -587,7 +590,10 @@ async fn tracker_remove_sender(
     drop(t);
 
     if old_total > 0 && new_total == 0 {
-        eventline::debug!("dbus: inhibit cleared by sender disconnect (sender={})", sender);
+        eventline::debug!(
+            "dbus: inhibit cleared by sender disconnect (sender={})",
+            sender
+        );
         sink.push(Event::BrowserInactive { now_ms: now_ms() });
     }
 }
@@ -705,8 +711,7 @@ async fn spawn_dbus_inhibit_monitor(sink: Arc<dyn EventSink>) -> zbus::Result<()
                     }
 
                     // Portal Inhibit returns a request-handle object path.
-                    if let Ok(handle) =
-                        msg.body().deserialize::<zbus::zvariant::OwnedObjectPath>()
+                    if let Ok(handle) = msg.body().deserialize::<zbus::zvariant::OwnedObjectPath>()
                     {
                         tracker_confirm_portal_handle(
                             &tracker,
@@ -851,7 +856,8 @@ async fn run_dbus(
                                     let sink_lock = sink.clone();
                                     tokio::spawn(async move {
                                         while let Some(_) = lock_stream.next().await {
-                                            sink_lock.push(Event::SessionLocked { now_ms: now_ms() });
+                                            sink_lock
+                                                .push(Event::SessionLocked { now_ms: now_ms() });
                                         }
                                     });
 
@@ -876,7 +882,9 @@ async fn run_dbus(
                     }
                 }
                 Err(e) => {
-                    eventline::warn!("D-Bus: could not resolve session path for lock/unlock: {e:?}");
+                    eventline::warn!(
+                        "D-Bus: could not resolve session path for lock/unlock: {e:?}"
+                    );
                 }
             }
         } else {
@@ -884,6 +892,26 @@ async fn run_dbus(
         }
 
         {
+            match Proxy::new(
+                sys,
+                "org.freedesktop.UPower",
+                "/org/freedesktop/UPower",
+                "org.freedesktop.UPower",
+            )
+            .await
+            {
+                Ok(proxy) => {
+                    // Force service activation up front; a raw signal match rule alone
+                    // does not guarantee UPower is started yet.
+                    if let Err(e) = proxy.get_property::<bool>("LidIsPresent").await {
+                        eventline::warn!("D-Bus: could not read initial UPower lid state: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    eventline::warn!("D-Bus: could not create UPower proxy: {e:?}");
+                }
+            }
+
             let rule = MatchRule::builder()
                 .msg_type(zbus::message::Type::Signal)
                 .interface("org.freedesktop.DBus.Properties")?

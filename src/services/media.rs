@@ -336,13 +336,10 @@ fn pactl_sink_input_count(
 
     for line in text.lines() {
         let trimmed = line.trim_start();
-        let is_header =
-            trimmed.starts_with("Sink Input #") || trimmed.starts_with("SinkInput #");
+        let is_header = trimmed.starts_with("Sink Input #") || trimmed.starts_with("SinkInput #");
 
         if is_header {
-            if saw_header
-                && sink_input_block_counts(&block, ignore_remote_media, media_blacklist)
-            {
+            if saw_header && sink_input_block_counts(&block, ignore_remote_media, media_blacklist) {
                 count += 1;
             }
             block.clear();
@@ -501,10 +498,7 @@ fn sink_input_is_systemish(props: &HashMap<String, String>) -> bool {
     haystack_contains_any(&sink_input_identity_haystack(props), NEEDLES)
 }
 
-fn sink_input_is_blacklisted(
-    blacklist: &[Pattern],
-    props: &HashMap<String, String>,
-) -> bool {
+fn sink_input_is_blacklisted(blacklist: &[Pattern], props: &HashMap<String, String>) -> bool {
     if blacklist.is_empty() {
         return false;
     }
