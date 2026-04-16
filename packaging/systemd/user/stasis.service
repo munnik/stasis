@@ -10,6 +10,7 @@ ConditionPathExists=%t
 [Service]
 Type=simple
 ExecStart=/usr/bin/stasis
+ExecReload=/usr/bin/stasis reload
 Restart=on-failure
 RestartSec=2
 
