@@ -65,15 +65,27 @@ in
         Optional environment file read by the Stasis systemd user service.
         Useful for compositor-specific variables like NIRI_SOCKET.
         Set to null to disable.
+
+        This only provides environment variables to the service. It does not
+        add any commands to PATH.
       '';
     };
     extraPathPackages = mkOption {
       type = types.listOf types.package;
       default = [ ];
-      example = literalExpression ''with pkgs; [ playerctl ]'';
+      example = literalExpression ''with pkgs; [ playerctl swaylock brightnessctl ]'';
       description = ''
         Extra packages added to the Stasis systemd user service PATH.
         (`pulseaudio` is included by default so `pactl` is available.)
+
+        Add packages here only when Stasis itself or commands referenced by your
+        Stasis config need to execute them by name. For example, if your config
+        uses `swaylock`, `brightnessctl`, or `playerctl`, add those packages
+        here. If you run Stasis under niri and your Stasis build shells out to
+        the `niri` command, add `pkgs.niri` here too.
+
+        Users do not need to add `swaylock`, `niri`, or any other package unless
+        their Stasis setup actually requires those commands.
       '';
     };
   };

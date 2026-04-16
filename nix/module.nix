@@ -95,7 +95,7 @@ in
       extraPathPackages = mkOption {
         type = types.listOf types.package;
         default = [ ];
-        example = literalExpression ''with pkgs; [ playerctl ]'';
+        example = literalExpression ''with pkgs; [ playerctl swaylock brightnessctl ]'';
         description = ''
           Extra packages added to the Stasis systemd user service PATH.
           (The module already includes `pulseaudio` so `pactl` is available.)
