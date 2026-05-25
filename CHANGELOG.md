@@ -5,7 +5,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.1.1] - TBD
+## [1.2.0] - 2026-05-25
+
+### Added
+
+- **Halley app-inhibit support**
+  - Stasis now detects Halley sessions and queries `halleyctl node list --json` for app tracking.
+  - `inhibit_apps` patterns match Halley window `app_id` values such as `firefox`, `kitty`, or `steam_app_123`.
+  - Halley IPC failures keep the previous inhibitor count, matching the existing compositor backend behavior.
+
+- **Optional StatusNotifier tray frontend**
+  - Added `stasis tray`, an optional system tray frontend that leaves the daemon and Waybar JSON integration unchanged.
+  - The tray shows current daemon state in its tooltip and provides menu actions for toggle inhibit, pause, resume, reload config, and quitting only the tray process.
+  - Added a dedicated tray icon asset and optional `stasis-tray.service` systemd user unit.
+  - NixOS and Home Manager modules can enable the tray with `services.stasis.tray.enable`.
+
+- **Updated app icon**
+  - Refreshed the main Stasis icon asset used by README/project branding.
 
 ### Changed
 
