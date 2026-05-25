@@ -82,6 +82,8 @@ pub async fn run(args: Args) -> Result<(), AnyError> {
             }
         },
 
+        Command::Tray => crate::app::tray::run().await,
+
         Command::Trigger { step } => {
             let msg = format!("trigger {}", step);
 

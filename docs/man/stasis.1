@@ -118,6 +118,17 @@ Custom steps can be triggered by their name (normalized) and also by
 Toggle manual idle inhibition. When inhibited, timers are paused.
 
 .TP
+.B tray
+Run the optional StatusNotifier system tray frontend.
+.PP
+The tray shows the current Stasis state in its tooltip and exposes a menu for
+toggle inhibit, pause, resume, reload config, and quitting only the tray process.
+.PP
+This command requires a StatusNotifier tray host, such as Waybar's tray module,
+KDE Plasma, or another panel. It does not replace Bstasis info --jsonR for
+Waybar/status-bar integrations.
+
+.TP
 .B stop
 Stop all running Stasis instances.
 

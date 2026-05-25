@@ -51,7 +51,7 @@ It is a **context-aware, event-driven idle manager** built around explicit state
 - ⚙️ Flexible action plans
   - Startup steps, sequential steps, instant actions, resume hooks
 - 🔁 Manual idle inhibition
-  - Toggle idle on/off via CLI or status bars (Waybar-friendly)
+  - Toggle idle on/off via CLI, status bars (Waybar-friendly JSON), or the optional tray frontend
 - 📝 Clean configuration
   - Uses the expressive [RUNE](https://github.com/saltnpepper97/rune-cfg) configuration language
 - ⚡ Live reload
@@ -189,6 +189,7 @@ Important separation:
 ## CLI Usage
 
     stasis info [--json]
+    stasis tray
     stasis pause [for <duration> | until <time>]
     stasis resume
     stasis toggle-inhibit
@@ -199,6 +200,15 @@ Important separation:
     stasis reload
     stasis stop
 
+`stasis tray` runs an optional StatusNotifier tray frontend. It does not replace
+`stasis info --json`; Waybar and other status bars can keep using the JSON output
+directly. Tray users should run both the daemon and tray frontend, for example
+with `stasis.service` plus the optional `stasis-tray.service`.
+
+The tray requires a StatusNotifier tray host, such as Waybar's tray module, KDE
+Plasma, or another panel. The daemon remains headless and does not launch the
+tray automatically.
+
 ---
 
 ## Compositor Support (app-inhibit)
@@ -207,11 +217,18 @@ Stasis integrates with each compositor's available IPC and standard Wayland prot
 
 | Compositor | Support Status | Notes |
 |-----------|----------------|-------|
+| **Halley** | ✅ Full Support | Native IPC via `halleyctl`; matches window `app_id` |
 | **Niri** | ✅ Full Support | Tested and working perfectly |
 | **Hyprland** | ✅ Full Support | Native IPC integration |
 | **labwc** | ⚠️ Limited | Process-based fallback |
 | **River** | ⚠️ Limited | Process-based fallback |
 | **Your Favorite** | 🤝 PRs Welcome | Help us expand support |
+
+### Halley Notes
+
+When running inside a Halley session, Stasis uses `halleyctl node list --json`
+for app-inhibit tracking. `inhibit_apps` patterns match Halley window `app_id`
+values, such as `firefox`, `kitty`, or `steam_app_123`.
 
 ### River & labwc Notes
 

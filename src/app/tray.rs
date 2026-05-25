@@ -1,0 +1,245 @@
+// Author: Dustin Pilgrim
+// License: GPL-3.0-only
+
+use std::sync::LazyLock;
+use std::time::Duration;
+
+use image::GenericImageView;
+use ksni::{Tray, TrayMethods};
+use serde::Deserialize;
+use tokio::sync::mpsc;
+
+type AnyError = Box<dyn std::error::Error + Send + Sync>;
+
+static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
+    let img = image::load_from_memory_with_format(
+        include_bytes!("../../assets/stasis-tray.png"),
+        image::ImageFormat::Png,
+    )
+    .expect("embedded tray icon is a valid PNG")
+    .resize(64, 64, image::imageops::FilterType::Lanczos3);
+
+    let (width, height) = img.dimensions();
+    let mut data = img.into_rgba8().into_vec();
+    for pixel in data.chunks_exact_mut(4) {
+        pixel.rotate_right(1); // RGBA -> ARGB, as required by StatusNotifierItem.
+    }
+
+    ksni::Icon {
+        width: width as i32,
+        height: height as i32,
+        data,
+    }
+});
+
+#[derive(Debug, Clone, Deserialize)]
+struct TraySnapshot {
+    text: String,
+    alt: String,
+    #[allow(dead_code)]
+    class: String,
+    tooltip: String,
+    profile: Option<String>,
+}
+
+impl TraySnapshot {
+    fn not_running(message: impl Into<String>) -> Self {
+        let message = message.into();
+        Self {
+            text: "not running".to_string(),
+            alt: "not_running".to_string(),
+            class: "not_running".to_string(),
+            tooltip: format!("Stasis not running\n{message}"),
+            profile: None,
+        }
+    }
+
+    fn title(&self) -> String {
+        format!("Stasis: {}", self.text)
+    }
+
+    fn tooltip_description(&self) -> String {
+        let mut lines = Vec::new();
+        if let Some(profile) = &self.profile {
+            lines.push(format!("Profile: {profile}"));
+        }
+        if !self.tooltip.trim().is_empty() {
+            lines.push(self.tooltip.trim().to_string());
+        }
+        lines.join("\n")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TrayCommand {
+    ToggleInhibit,
+    Pause,
+    Resume,
+    Reload,
+    Quit,
+}
+
+#[derive(Debug)]
+struct StasisTray {
+    snapshot: TraySnapshot,
+    commands: mpsc::UnboundedSender<TrayCommand>,
+}
+
+impl StasisTray {
+    fn send(&self, cmd: TrayCommand) {
+        let _ = self.commands.send(cmd);
+    }
+}
+
+impl Tray for StasisTray {
+    const MENU_ON_ACTIVATE: bool = true;
+
+    fn id(&self) -> String {
+        "stasis".to_string()
+    }
+
+    fn title(&self) -> String {
+        self.snapshot.title()
+    }
+
+    fn status(&self) -> ksni::Status {
+        if self.snapshot.alt == "not_running" {
+            ksni::Status::NeedsAttention
+        } else {
+            ksni::Status::Active
+        }
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        vec![TRAY_ICON.clone()]
+    }
+
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            title: self.snapshot.title(),
+            description: self.snapshot.tooltip_description(),
+            ..Default::default()
+        }
+    }
+
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::*;
+
+        let daemon_running = self.snapshot.alt != "not_running";
+
+        vec![
+            StandardItem {
+                label: self.snapshot.title(),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: "Toggle Inhibit".to_string(),
+                enabled: daemon_running,
+                activate: Box::new(|this: &mut Self| this.send(TrayCommand::ToggleInhibit)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Pause".to_string(),
+                enabled: daemon_running,
+                activate: Box::new(|this: &mut Self| this.send(TrayCommand::Pause)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Resume".to_string(),
+                enabled: daemon_running,
+                activate: Box::new(|this: &mut Self| this.send(TrayCommand::Resume)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Reload Config".to_string(),
+                enabled: daemon_running,
+                activate: Box::new(|this: &mut Self| this.send(TrayCommand::Reload)),
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: "Quit Tray".to_string(),
+                icon_name: "application-exit".to_string(),
+                activate: Box::new(|this: &mut Self| this.send(TrayCommand::Quit)),
+                ..Default::default()
+            }
+            .into(),
+        ]
+    }
+}
+
+pub async fn run() -> Result<(), AnyError> {
+    let (commands_tx, mut commands_rx) = mpsc::unbounded_channel();
+    let tray = StasisTray {
+        snapshot: fetch_snapshot().await,
+        commands: commands_tx,
+    };
+
+    let handle = tray.spawn().await.map_err(|err| {
+        format!(
+            "tray unavailable: {err}. Start a StatusNotifier tray host first, such as Waybar's tray module, KDE Plasma, or another panel."
+        )
+    })?;
+
+    let mut refresh = tokio::time::interval(Duration::from_secs(2));
+    refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            _ = refresh.tick() => {
+                update_snapshot(&handle).await;
+            }
+
+            Some(cmd) = commands_rx.recv() => {
+                if matches!(cmd, TrayCommand::Quit) {
+                    handle.shutdown().await;
+                    break;
+                }
+
+                run_command(cmd).await;
+                update_snapshot(&handle).await;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn update_snapshot(handle: &ksni::Handle<StasisTray>) {
+    let snapshot = fetch_snapshot().await;
+    let _ = handle
+        .update(|tray: &mut StasisTray| {
+            tray.snapshot = snapshot;
+        })
+        .await;
+}
+
+async fn fetch_snapshot() -> TraySnapshot {
+    match crate::ipc::client::send_raw("info --json").await {
+        Ok(resp) => serde_json::from_str(resp.trim()).unwrap_or_else(|err| {
+            TraySnapshot::not_running(format!("invalid daemon status JSON: {err}"))
+        }),
+        Err(err) => TraySnapshot::not_running(err),
+    }
+}
+
+async fn run_command(cmd: TrayCommand) {
+    let raw = match cmd {
+        TrayCommand::ToggleInhibit => "toggle-inhibit",
+        TrayCommand::Pause => "pause",
+        TrayCommand::Resume => "resume",
+        TrayCommand::Reload => "reload",
+        TrayCommand::Quit => return,
+    };
+
+    if let Err(err) = crate::ipc::client::send_raw(raw).await {
+        eprintln!("stasis tray: {raw} failed: {err}");
+    }
+}

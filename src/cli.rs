@@ -56,6 +56,9 @@ pub enum Command {
     #[command(about = "Toggle manual idle inhibition")]
     ToggleInhibit,
 
+    #[command(about = "Run the optional system tray frontend")]
+    Tray,
+
     #[command(about = "Stop all running Stasis instances")]
     Stop,
 

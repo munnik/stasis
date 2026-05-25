@@ -4,3 +4,4 @@
 pub mod command;
 pub mod daemon_mode;
 pub mod platform;
+pub mod tray;

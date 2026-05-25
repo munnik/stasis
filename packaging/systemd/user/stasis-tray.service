@@ -1,0 +1,17 @@
+# Author: Dustin Pilgrim
+# License: GPL-3.0-only
+
+[Unit]
+Description=Stasis System Tray Frontend
+PartOf=graphical-session.target
+After=graphical-session.target stasis.service
+ConditionPathExists=%t
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/stasis tray
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

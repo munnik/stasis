@@ -101,6 +101,8 @@ in
           (The module already includes `pulseaudio` so `pactl` is available.)
         '';
       };
+
+      tray.enable = mkEnableOption "the optional Stasis StatusNotifier tray frontend";
     };
   };
 
@@ -124,6 +126,32 @@ in
 
           PassEnvironment = [
             "NIRI_SOCKET"
+            "WAYLAND_DISPLAY"
+            "XDG_RUNTIME_DIR"
+            "DBUS_SESSION_BUS_ADDRESS"
+          ];
+        }
+        (mkIf (cfg.environmentFile != null) {
+          EnvironmentFile = [ "-${cfg.environmentFile}" ];
+        })
+      ];
+    };
+
+    systemd.user.services.stasis-tray = mkIf cfg.tray.enable {
+      description = "Stasis System Tray Frontend";
+      after = [ cfg.target "stasis.service" ];
+      partOf = [ cfg.target ];
+      wantedBy = [ cfg.target ];
+
+      path = baseServicePathPkgs ++ cfg.extraPathPackages;
+
+      serviceConfig = mkMerge [
+        {
+          Type = "simple";
+          ExecStart = "${getExe cfg.package} tray";
+          Restart = "on-failure";
+
+          PassEnvironment = [
             "WAYLAND_DISPLAY"
             "XDG_RUNTIME_DIR"
             "DBUS_SESSION_BUS_ADDRESS"

@@ -88,6 +88,7 @@ in
         their Stasis setup actually requires those commands.
       '';
     };
+    tray.enable = mkEnableOption "the optional Stasis StatusNotifier tray frontend";
   };
   config = mkIf cfg.enable {
     home.packages = [ cfg.package ];
@@ -108,6 +109,35 @@ in
           ];
           PassEnvironment = [
             "NIRI_SOCKET"
+            "WAYLAND_DISPLAY"
+            "XDG_RUNTIME_DIR"
+            "DBUS_SESSION_BUS_ADDRESS"
+          ];
+        }
+        (mkIf (cfg.environmentFile != null) {
+          EnvironmentFile = [ "-${cfg.environmentFile}" ];
+        })
+      ];
+      Install = {
+        WantedBy = [ cfg.target ];
+      };
+    };
+    systemd.user.services.stasis-tray = mkIf cfg.tray.enable {
+      Unit = {
+        Description = "Stasis System Tray Frontend";
+        PartOf = [ cfg.target ];
+        After = [ cfg.target "stasis.service" ];
+      };
+      Service = mkMerge [
+        {
+          Type = "simple";
+          ExecStart = "${getExe cfg.package} tray";
+          Restart = "on-failure";
+          Slice = "session.slice";
+          Environment = [
+            "PATH=${makeBinPath (baseServicePathPkgs ++ cfg.extraPathPackages)}"
+          ];
+          PassEnvironment = [
             "WAYLAND_DISPLAY"
             "XDG_RUNTIME_DIR"
             "DBUS_SESSION_BUS_ADDRESS"

@@ -97,10 +97,14 @@ pub struct AppInhibitService {
 
 #[derive(Debug)]
 enum Backend {
+    Halley(HalleyBackend),
     Hyprland(HyprlandBackend),
     Niri(NiriBackend),
     Proc(ProcBackend),
 }
+
+#[derive(Debug, Default)]
+struct HalleyBackend {}
 
 #[derive(Debug, Default)]
 struct HyprlandBackend {}
@@ -180,6 +184,37 @@ impl AppInhibitService {
             scratch.clear();
 
             match &self.backend {
+                Backend::Halley(_) => {
+                    let apps = self.apps.clone();
+                    match tokio::task::spawn_blocking(move || {
+                        HalleyBackend::count_into(&apps, &mut scratch)?;
+                        Ok::<_, String>((scratch.len() as u64, scratch))
+                    })
+                    .await
+                    {
+                        Ok(Ok((n, returned))) => {
+                            self.seen = returned;
+                            n
+                        }
+                        Ok(Err(e)) => {
+                            eventline::warn!(
+                                "app_inhibit: halley query failed (keeping previous count={}): {}",
+                                prev_count,
+                                e
+                            );
+                            prev_count
+                        }
+                        Err(e) => {
+                            eventline::warn!(
+                                "app_inhibit: halley task panicked (keeping previous count={}): {}",
+                                prev_count,
+                                e
+                            );
+                            prev_count
+                        }
+                    }
+                }
+
                 Backend::Hyprland(_) => {
                     let apps = self.apps.clone();
                     match tokio::task::spawn_blocking(move || {
@@ -307,6 +342,7 @@ impl AppInhibitService {
 
     pub fn backend_name(&self) -> &'static str {
         match self.backend {
+            Backend::Halley(_) => "halley",
             Backend::Hyprland(_) => "hyprland",
             Backend::Niri(_) => "niri",
             Backend::Proc(_) => "proc",
@@ -317,7 +353,29 @@ impl AppInhibitService {
 // ----------------------------- backend detection -----------------------------
 
 fn detect_backend() -> Option<Backend> {
-    detect_hyprland_backend().or_else(detect_niri_backend)
+    detect_halley_backend()
+        .or_else(detect_hyprland_backend)
+        .or_else(detect_niri_backend)
+}
+
+fn detect_halley_backend() -> Option<Backend> {
+    for key in [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+    ] {
+        if let Ok(value) = env::var(key) {
+            if value.to_lowercase().contains("halley") {
+                return Some(Backend::Halley(HalleyBackend::default()));
+            }
+        }
+    }
+
+    if env::var("HALLEY_WL_BACKEND").is_ok() {
+        return Some(Backend::Halley(HalleyBackend::default()));
+    }
+
+    None
 }
 
 fn detect_hyprland_backend() -> Option<Backend> {
@@ -388,6 +446,58 @@ fn app_id_matches_literal(pattern: &str, app_id: &str) -> bool {
         }
     }
     false
+}
+
+// ----------------------------- Halley (halleyctl) ----------------------------
+
+impl HalleyBackend {
+    /// Populates `seen` with matched Halley window app IDs. Caller must `clear()` first.
+    fn count_into(apps: &[Pattern], seen: &mut HashSet<String>) -> Result<(), String> {
+        let out = std::process::Command::new("halleyctl")
+            .args(["node", "list", "--json"])
+            .output()
+            .map_err(|e| format!("halleyctl spawn failed: {e}"))?;
+
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(format!("halleyctl node list --json failed: {}", err.trim()));
+        }
+
+        Self::count_json_into(apps, seen, &out.stdout)
+    }
+
+    fn count_json_into(
+        apps: &[Pattern],
+        seen: &mut HashSet<String>,
+        json: &[u8],
+    ) -> Result<(), String> {
+        let v: serde_json::Value = serde_json::from_slice(json)
+            .map_err(|e| format!("halleyctl json parse failed: {e}"))?;
+
+        let outputs = v
+            .get("outputs")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| "halleyctl json: expected outputs array".to_string())?;
+
+        for output in outputs {
+            let Some(nodes) = output.get("nodes").and_then(|x| x.as_array()) else {
+                continue;
+            };
+
+            for node in nodes {
+                let app_id = node.get("app_id").and_then(|x| x.as_str()).unwrap_or("");
+                if app_id.is_empty() {
+                    continue;
+                }
+
+                if should_inhibit_app_id(app_id, apps) {
+                    seen.insert(app_id.to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // ----------------------------- Hyprland (hyprctl) ----------------------------
@@ -567,4 +677,54 @@ fn patterns_same(a: &[Pattern], b: &[Pattern]) -> bool {
         .map(|p| p.to_string())
         .zip(b.iter().map(|p| p.to_string()))
         .all(|(x, y)| x == y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn halley_json_counts_unique_matching_app_ids() {
+        let apps = vec![
+            Pattern::Literal("firefox".to_string()),
+            Pattern::Regex(regex::Regex::new(r"steam_app_.*").unwrap()),
+        ];
+        let json = br#"
+        {
+          "outputs": [
+            {
+              "output": "DP-1",
+              "nodes": [
+                { "id": 1, "app_id": "firefox", "title": "one" },
+                { "id": 2, "app_id": "firefox", "title": "two" },
+                { "id": 3, "app_id": "kitty", "title": "shell" }
+              ]
+            },
+            {
+              "output": "DP-2",
+              "nodes": [
+                { "id": 4, "app_id": "steam_app_123", "title": "game" },
+                { "id": 5, "app_id": null, "title": "missing app" }
+              ]
+            }
+          ]
+        }
+        "#;
+
+        let mut seen = HashSet::new();
+        HalleyBackend::count_json_into(&apps, &mut seen, json).unwrap();
+
+        assert_eq!(seen.len(), 2);
+        assert!(seen.contains("firefox"));
+        assert!(seen.contains("steam_app_123"));
+    }
+
+    #[test]
+    fn halley_json_rejects_missing_outputs_array() {
+        let mut seen = HashSet::new();
+        let err = HalleyBackend::count_json_into(&[], &mut seen, br#"{"nodes": []}"#)
+            .expect_err("missing outputs should be invalid");
+
+        assert!(err.contains("expected outputs array"));
+    }
 }
