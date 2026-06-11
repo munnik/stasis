@@ -28,6 +28,10 @@ rustPlatform.buildRustPackage {
     dbus
   ];
 
+  postInstall = ''
+    install -Dm644 assets/stasis.png $out/share/icons/hicolor/256x256/apps/stasis.png
+  '';
+
   meta = {
     description = "Modern idle manager for Wayland";
     longDescription = ''

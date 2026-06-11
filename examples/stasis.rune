@@ -51,6 +51,11 @@ default:
   # Enables per-step notifications (only if the block sets `notification`)
   notify_before_action true
 
+  # Icon name/path for Stasis-generated notifications. Defaults to "stasis".
+  # Set to "" to disable the default icon, or override per step with
+  # `notification_icon`.
+  #notification_icon "dialog-warning"
+
   # Apps that inhibit Stasis while running (regex allowed via r"...")
   inhibit_apps [
     "mpv"
@@ -80,6 +85,7 @@ default:
     command "hyprlock"
     resume_command "notify-send 'Welcome Back $env.USER!'"
     notification "Locking session in 10s"
+    #notification_icon "dialog-warning"
     notify_seconds_before 10
   end
 

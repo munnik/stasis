@@ -45,6 +45,7 @@ fn step(kind: PlanStepKind, timeout: u64, cmd: &str) -> PlanStep {
         command: Some(cmd.to_string()),
         resume_command: None,
         notification: None,
+        notification_icon: None,
         notify_seconds_before: None,
     }
 }
@@ -179,7 +180,8 @@ fn notify_then_run_with_delay() {
     assert_eq!(
         actions,
         vec![Action::Notify {
-            message: "warn".to_string()
+            message: "warn".to_string(),
+            icon: Some("stasis".to_string()),
         }]
     );
 
@@ -227,7 +229,8 @@ fn late_tick_runs_notify_then_command_on_later_tick() {
     assert_eq!(
         actions,
         vec![Action::Notify {
-            message: "heads up".to_string()
+            message: "heads up".to_string(),
+            icon: Some("stasis".to_string()),
         }]
     );
 

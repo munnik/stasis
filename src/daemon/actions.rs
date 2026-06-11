@@ -62,12 +62,18 @@ impl Daemon {
                 }
             }
 
-            Action::Notify { message } => {
+            Action::Notify { message, icon } => {
                 eventline::info!("notify: {}", message);
-                let escaped = crate::core::utils::escape_single_quotes(&message);
-                let child = std::process::Command::new("sh")
-                    .arg("-lc")
-                    .arg(format!("notify-send -a Stasis '{escaped}'"))
+                let mut cmd = std::process::Command::new("notify-send");
+                cmd.arg("-a").arg("Stasis");
+
+                if let Some(icon) = icon.as_deref().filter(|s| !s.trim().is_empty()) {
+                    cmd.arg("-i").arg(icon);
+                }
+
+                let child = cmd
+                    .arg("--")
+                    .arg(&message)
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())

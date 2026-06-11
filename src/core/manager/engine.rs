@@ -99,7 +99,10 @@ impl Manager {
                     self.handle_activity_like_event(state, &cfg, now_ms, &mut out);
 
                     if cfg.notify_on_unpause {
-                        out.push(Action::Notify { message });
+                        out.push(Action::Notify {
+                            message,
+                            icon: cfg.notification_icon.clone(),
+                        });
                     }
                 }
             }
@@ -699,7 +702,13 @@ impl Manager {
 
             if !state.pre_action_notify_sent() {
                 let msg = step.notification.clone().unwrap();
-                out.push(Action::Notify { message: msg });
+                out.push(Action::Notify {
+                    message: msg,
+                    icon: step
+                        .notification_icon
+                        .clone()
+                        .or_else(|| cfg.notification_icon.clone()),
+                });
 
                 state.set_pre_action_notify_sent(true);
                 state.set_pre_action_notify_ms(now_ms);

@@ -4,6 +4,8 @@
 use regex::Regex;
 use std::fmt;
 
+pub const DEFAULT_NOTIFICATION_ICON: &str = "stasis";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileMode {
     /// Start from a fully disabled config; only fields set in the profile apply.
@@ -60,6 +62,9 @@ pub struct PlanStep {
 
     /// Optional notification emitted before firing this step.
     pub notification: Option<String>,
+
+    /// Optional icon name/path for this step's notification.
+    pub notification_icon: Option<String>,
 
     /// Notify N seconds before this step fires (only if notification is Some).
     pub notify_seconds_before: Option<u64>,
@@ -141,6 +146,7 @@ pub struct Config {
 
     pub notify_on_unpause: bool,
     pub notify_before_action: bool,
+    pub notification_icon: Option<String>,
 
     /// Process/class patterns or names that should inhibit idle behavior.
     pub inhibit_apps: Vec<Pattern>,
@@ -186,6 +192,7 @@ impl Config {
 
             notify_on_unpause: false,
             notify_before_action: false,
+            notification_icon: Some(DEFAULT_NOTIFICATION_ICON.to_string()),
 
             inhibit_apps: Vec::new(),
 
@@ -216,6 +223,7 @@ impl Config {
                 command: self.startup.command.clone(),
                 resume_command: self.startup.resume_command.clone(),
                 notification: self.startup.notification.clone(),
+                notification_icon: self.startup.notification_icon.clone(),
                 notify_seconds_before: self.startup.notify_seconds_before,
             },
             PlanStep {
@@ -224,6 +232,7 @@ impl Config {
                 command: self.brightness.command.clone(),
                 resume_command: self.brightness.resume_command.clone(),
                 notification: self.brightness.notification.clone(),
+                notification_icon: self.brightness.notification_icon.clone(),
                 notify_seconds_before: self.brightness.notify_seconds_before,
             },
             PlanStep {
@@ -232,6 +241,7 @@ impl Config {
                 command: self.lock_screen.command.clone(),
                 resume_command: self.lock_screen.resume_command.clone(),
                 notification: self.lock_screen.notification.clone(),
+                notification_icon: self.lock_screen.notification_icon.clone(),
                 notify_seconds_before: self.lock_screen.notify_seconds_before,
             },
             PlanStep {
@@ -240,6 +250,7 @@ impl Config {
                 command: self.dpms.command.clone(),
                 resume_command: self.dpms.resume_command.clone(),
                 notification: self.dpms.notification.clone(),
+                notification_icon: self.dpms.notification_icon.clone(),
                 notify_seconds_before: self.dpms.notify_seconds_before,
             },
             PlanStep {
@@ -248,6 +259,7 @@ impl Config {
                 command: self.suspend.command.clone(),
                 resume_command: self.suspend.resume_command.clone(),
                 notification: self.suspend.notification.clone(),
+                notification_icon: self.suspend.notification_icon.clone(),
                 notify_seconds_before: self.suspend.notify_seconds_before,
             },
         ];
@@ -285,6 +297,9 @@ pub struct ActionBlock {
     /// Optional notification emitted before firing this block (only if notify_before_action is true).
     pub notification: Option<String>,
 
+    /// Optional icon name/path for this block's notification.
+    pub notification_icon: Option<String>,
+
     /// Wait N seconds after notification before firing the command.
     pub notify_seconds_before: Option<u64>,
 }
@@ -296,6 +311,7 @@ impl ActionBlock {
             command: None,
             resume_command: None,
             notification: None,
+            notification_icon: None,
             notify_seconds_before: None,
         }
     }
@@ -308,6 +324,7 @@ pub struct LockBlock {
     pub resume_command: Option<String>,
 
     pub notification: Option<String>,
+    pub notification_icon: Option<String>,
     pub notify_seconds_before: Option<u64>,
 }
 
@@ -318,6 +335,7 @@ impl LockBlock {
             command: None,
             resume_command: None,
             notification: None,
+            notification_icon: None,
             notify_seconds_before: None,
         }
     }
@@ -350,6 +368,7 @@ pub struct PartialConfig {
 
     pub notify_on_unpause: Option<bool>,
     pub notify_before_action: Option<bool>,
+    pub notification_icon: Option<Option<String>>,
 
     pub inhibit_apps: Option<Vec<Pattern>>,
 
@@ -428,6 +447,9 @@ impl PartialConfig {
         }
         if let Some(v) = self.notify_before_action {
             base.notify_before_action = v;
+        }
+        if let Some(v) = &self.notification_icon {
+            base.notification_icon = v.clone();
         }
 
         if let Some(v) = &self.inhibit_apps {

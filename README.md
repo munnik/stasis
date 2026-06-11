@@ -130,6 +130,7 @@ Build & install:
     cd stasis
     cargo build --release --locked
     sudo install -Dm755 target/release/stasis /usr/local/bin/stasis
+    sudo install -Dm644 assets/stasis.png /usr/local/share/icons/hicolor/256x256/apps/stasis.png
 
 ---
 

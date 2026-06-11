@@ -149,6 +149,9 @@ fn parse_config_file(rc: &RuneConfig) -> Result<ConfigFile, String> {
 
             cfg.notify_on_unpause = rc.get_or("default.notify_on_unpause", false);
             cfg.notify_before_action = rc.get_or("default.notify_before_action", false);
+            if rc.has("default.notification_icon") {
+                cfg.notification_icon = opt_empty_string_as_none(rc, "default.notification_icon")?;
+            }
 
             // allow strings OR /regex/ entries (keep compiled regex)
             cfg.inhibit_apps = get_vec_pattern(rc, "default.inhibit_apps", Vec::new())?;
@@ -233,6 +236,7 @@ fn parse_plan_block(
                 | "debounce_seconds"
                 | "notify_on_unpause"
                 | "notify_before_action"
+                | "notification_icon"
                 | "inhibit_apps"
                 | "lid_close_action"
                 | "lid_open_action"
@@ -244,6 +248,7 @@ fn parse_plan_block(
             || rc.has(&format!("{base}.command"))
             || rc.has(&format!("{base}.resume_command"))
             || rc.has(&format!("{base}.notification"))
+            || rc.has(&format!("{base}.notification_icon"))
             || rc.has(&format!("{base}.notify_seconds_before"))
     }
 
@@ -286,6 +291,7 @@ fn parse_plan_block(
                     command: lb.command,
                     resume_command: lb.resume_command,
                     notification: lb.notification,
+                    notification_icon: lb.notification_icon,
                     notify_seconds_before: lb.notify_seconds_before,
                 });
             }
@@ -386,7 +392,8 @@ fn parse_profiles(rc: &RuneConfig) -> Result<Vec<Profile>, String> {
         pc.enable_loginctl = opt_bool(rc, format!("{name}.enable_loginctl"))?;
         pc.enable_dbus_inhibit = opt_bool(rc, format!("{name}.enable_dbus_inhibit"))?;
         pc.pre_suspend_command = opt_nullable_string2(rc, format!("{name}.pre_suspend_command"))?;
-        pc.prepare_sleep_command = opt_nullable_string2(rc, format!("{name}.prepare_sleep_command"))?;
+        pc.prepare_sleep_command =
+            opt_nullable_string2(rc, format!("{name}.prepare_sleep_command"))?;
 
         pc.monitor_media = opt_bool(rc, format!("{name}.monitor_media"))?;
         pc.ignore_remote_media = opt_bool(rc, format!("{name}.ignore_remote_media"))?;
@@ -395,6 +402,8 @@ fn parse_profiles(rc: &RuneConfig) -> Result<Vec<Profile>, String> {
         pc.debounce_seconds = opt_u64(rc, format!("{name}.debounce_seconds"))?;
         pc.notify_on_unpause = opt_bool(rc, format!("{name}.notify_on_unpause"))?;
         pc.notify_before_action = opt_bool(rc, format!("{name}.notify_before_action"))?;
+        pc.notification_icon =
+            opt_empty_string_as_none_override(rc, &format!("{name}.notification_icon"))?;
         pc.inhibit_apps = opt_vec_pattern(rc, &format!("{name}.inhibit_apps"))?;
 
         // lid action profile overrides (None = no override, Some(None) = clear, Some(Some(cmd)) = set)
@@ -439,6 +448,7 @@ fn step_from_action_block(kind: PlanStepKind, ab: ActionBlock) -> PlanStep {
         command: ab.command,
         resume_command: ab.resume_command,
         notification: ab.notification,
+        notification_icon: ab.notification_icon,
         notify_seconds_before: ab.notify_seconds_before,
     }
 }
@@ -451,6 +461,7 @@ fn parse_action_block(rc: &RuneConfig, base: &str) -> Result<ActionBlock, String
 
     // allow notifications on ANY action block (custom, dpms, suspend, etc.)
     let notification = opt_string(rc, format!("{base}.notification"))?;
+    let notification_icon = opt_empty_string_as_none(rc, format!("{base}.notification_icon"))?;
     let notify_seconds_before = opt_u64(rc, format!("{base}.notify_seconds_before"))?;
 
     Ok(ActionBlock {
@@ -458,6 +469,7 @@ fn parse_action_block(rc: &RuneConfig, base: &str) -> Result<ActionBlock, String
         command,
         resume_command,
         notification,
+        notification_icon,
         notify_seconds_before,
     })
 }
@@ -469,6 +481,7 @@ fn parse_lock_block(rc: &RuneConfig, base: &str) -> Result<LockBlock, String> {
     let resume_command = opt_string(rc, format!("{base}.resume_command"))?;
 
     let notification = opt_string(rc, format!("{base}.notification"))?;
+    let notification_icon = opt_empty_string_as_none(rc, format!("{base}.notification_icon"))?;
     let notify_seconds_before = opt_u64(rc, format!("{base}.notify_seconds_before"))?;
 
     Ok(LockBlock {
@@ -476,6 +489,7 @@ fn parse_lock_block(rc: &RuneConfig, base: &str) -> Result<LockBlock, String> {
         command,
         resume_command,
         notification,
+        notification_icon,
         notify_seconds_before,
     })
 }
@@ -513,6 +527,37 @@ fn opt_string(rc: &RuneConfig, path: impl AsRef<str>) -> Result<Option<String>, 
     let p = path.as_ref();
     rc.get_optional::<String>(p)
         .map_err(|e| format!("config error at {}: {e}", p))
+}
+
+fn opt_empty_string_as_none(
+    rc: &RuneConfig,
+    path: impl AsRef<str>,
+) -> Result<Option<String>, String> {
+    Ok(opt_string(rc, path)?.and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }))
+}
+
+fn opt_empty_string_as_none_override(
+    rc: &RuneConfig,
+    path: &str,
+) -> Result<Option<Option<String>>, String> {
+    match opt_string(rc, path)? {
+        None => Ok(None),
+        Some(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Ok(Some(None))
+            } else {
+                Ok(Some(Some(trimmed.to_string())))
+            }
+        }
+    }
 }
 
 fn opt_bool(rc: &RuneConfig, path: impl AsRef<str>) -> Result<Option<bool>, String> {
@@ -635,6 +680,7 @@ fn log_config_debug(cfg_file: &ConfigFile) {
 
     eventline::debug!("  notify_on_unpause = {:?}", cfg.notify_on_unpause);
     eventline::debug!("  notify_before_action = {:?}", cfg.notify_before_action);
+    eventline::debug!("  notification_icon = {:?}", cfg.notification_icon);
 
     eventline::debug!("  inhibit_apps = {:?}", cfg.inhibit_apps);
 
@@ -699,6 +745,9 @@ fn dump_plan(plan: &[PlanStep]) {
         }
         if let Some(notification) = &step.notification {
             line.push_str(&format!(", notification=\"{}\"", notification));
+            if let Some(icon) = &step.notification_icon {
+                line.push_str(&format!(", notification_icon=\"{}\"", icon));
+            }
             if let Some(sec) = step.notify_seconds_before {
                 line.push_str(&format!(", notify_seconds_before={}s", sec));
             }

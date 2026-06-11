@@ -90,6 +90,12 @@ If true, per-step notifications are enabled for steps that define a
 \fBnotification\fR string.
 
 .TP
+.B notification_icon \fISTRING\fR | ""
+Icon name or file path passed to \fBnotify-send -i\fR for Stasis-generated
+notifications. Defaults to \fBstasis\fR when the packaged icon is installed.
+Set to an empty string to disable the default icon.
+
+.TP
 .B inhibit_apps [ \fIPATTERN...\fR ]
 List of patterns that inhibit idle behavior while active (case-insensitive).
 Regular expressions are allowed.
@@ -138,6 +144,11 @@ Resume commands can be deferred until unlock if the session is locked.
 .B notification \fISTRING\fR
 Optional notification message emitted before firing this step (only if
 \fBnotify_before_action true\fR is set globally).
+
+.TP
+.B notification_icon \fISTRING\fR
+Optional icon name or file path for this step's notification. If omitted, the
+global \fBnotification_icon\fR is used.
 
 .TP
 .B notify_seconds_before \fISECONDS\fR

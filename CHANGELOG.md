@@ -5,6 +5,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-06-11
+
+### Added
+
+- **Notification icon support**
+  - Stasis-generated notifications now pass an icon to `notify-send` with `-i`.
+  - The default notification icon is `stasis`.
+  - Added `notification_icon` config support globally and per step.
+  - Setting `notification_icon ""` disables the default icon.
+  - Packaged builds install `assets/stasis.png` as `share/icons/hicolor/256x256/apps/stasis.png`.
+
+### Changed
+
+- **Notification execution**
+  - Notifications now invoke `notify-send` directly with arguments instead of via `sh -lc`, avoiding shell escaping issues.
+
+- **Dependencies**
+  - Updated `rune-cfg` from `0.4.3` to `0.5.0`.
+
+---
+
 ## [1.2.0] - 2026-05-25
 
 ### Added

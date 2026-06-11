@@ -104,6 +104,10 @@ default:
   # Global gate: notifications before steps only happen if this is true
   #notify_before_action true
 
+  # Icon name/path for Stasis-generated notifications. Defaults to "stasis".
+  # Set to "" to disable the default icon, or override per step.
+  #notification_icon "dialog-warning"
+
   # App/process inhibit patterns (strings or regex literals)
   inhibit_apps [
     "vlc"
@@ -158,6 +162,7 @@ default:
 
       # Optional per-step notification:
       #notification "Locking session soon"
+      #notification_icon "dialog-warning"
       #notify_seconds_before 10
     end
 
@@ -239,6 +244,10 @@ default:
   # Global gate: notifications before steps only happen if this is true
   #notify_before_action true
 
+  # Icon name/path for Stasis-generated notifications. Defaults to "stasis".
+  # Set to "" to disable the default icon, or override per step.
+  #notification_icon "dialog-warning"
+
   # App/process inhibit patterns (strings or regex literals)
   inhibit_apps [
     "vlc"
@@ -252,6 +261,7 @@ default:
 
     # Optional per-step notification:
     #notification "Locking in 10s"
+    #notification_icon "dialog-warning"
     #notify_seconds_before 10
   end
 

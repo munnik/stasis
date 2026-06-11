@@ -10,7 +10,10 @@ pub enum Action {
     RunResumeCommand { command: String },
 
     /// Notify the user (runtime decides how: notify-send, dbus notification, etc.)
-    Notify { message: String },
+    Notify {
+        message: String,
+        icon: Option<String>,
+    },
 
     /// Lock-screen action: run the locker command and (optionally) also lock-session.
     ///

@@ -10,10 +10,6 @@ pub fn now_ms() -> u64 {
     d.as_millis() as u64
 }
 
-pub fn escape_single_quotes(s: &str) -> String {
-    s.replace('\'', r#"'"'"'"#)
-}
-
 // ---------------- power / chassis ----------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
