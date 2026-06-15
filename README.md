@@ -144,12 +144,27 @@ Build & install:
 >
 > **Option 1 — Don't daemonize (simplest):** Remove `daemonize = true` or the `-f` flag from your screen locker config.
 >
-> **Option 2 — Use `enable_loginctl` mode:** Enable stasis's `loginctl` mode so it tracks lock state via logind signals instead of process lifetime, then use a wrapper script:
+> **Option 2 — Use `enable_loginctl` mode (Recommended for daemonizing lockers):**
+> Enable Stasis's `loginctl` mode so it tracks lock state via D-Bus signals from `logind` instead of process lifetime. This requires a small wrapper script:
 > ```bash
 > #!/usr/bin/env bash
+> # Tell logind we are locking (Stasis listens for this)
 > loginctl lock-session
+> # Run your locker in the background (daemonize/fork it)
 > swaylock -f
 > ```
+> Save this as `~/.local/bin/stasis-lock.sh` and make it executable (`chmod +x`). Then use it in your config:
+> ```rune
+> default:
+>   enable_loginctl true
+>   
+>   lock_screen:
+>     timeout 300
+>     command "~/.local/bin/stasis-lock.sh"
+>   end
+> end
+> ```
+> This method is robust because it tracks the *session state*, not just a running process. It works perfectly even if your locker daemonizes or runs as a separate background service.
 
 > [!IMPORTANT]
 > **D-Bus session startup is required for full D-Bus features.**
