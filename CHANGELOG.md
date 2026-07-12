@@ -3,6 +3,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-12
+
+### Added
+
+- **Event-driven shell integration with `stasis watch`**
+  - `stasis watch` keeps a local IPC connection open and emits newline-delimited JSON: the current state immediately, then updates only when the shell-facing state changes.
+  - Events include `state`, `paused`, `manually_paused`, and the selected `profile`, covering pause/resume, profile changes, lock state, and inhibitor transitions without polling.
+
+- **Logind LockedHint tracking**
+  - Stasis now monitors logind's `LockedHint` session property via `PropertiesChanged`, independent of `enable_loginctl_integration`.
+  - This enables lock tracking for compositors and lock screens that set `LockedHint` (e.g. a Quickshell fork with the lockhint feature) without requiring loginctl signal mode.
+  - The property is read once at startup (emitting `SessionLocked` if already locked) and watched for ongoing changes.
+  - Non-fatal: if the property is unavailable or never set, Stasis falls through to existing tracking methods (loginctl signals, process tracking) with no regression.
+
+- **Hardware low-power mode**
+  - New `low_power_when_idle` and `low_power_when_idle_timeout` config keys (global, with profile override).
+  - After the DPMS step fires and the timeout elapses, Stasis applies conservative power-saving to supported hardware: GPU runtime PM (`power/control` → `auto`) and, for amdgpu, dynamic power management (`power_dpm_force_performance_level` → `auto`).
+  - Snapshot-based: every value changed is recorded and restored exactly on any resume path (activity, unlock, lid open, profile change, config reload) and on daemon shutdown.
+  - Requires write access to GPU sysfs files (elevated privileges or a udev rule); unwritable files are skipped and logged with no broken state left behind.
+
+- **Power-saving telemetry & `stasis report`**
+  - The daemon now records completed idle episodes (display off, hardware low-power, suspend) to `~/.local/state/stasis/report.jsonl`.
+  - New `stasis report [today|week]` subcommand aggregates time spent in each state and prints a rough estimated energy savings (kWh).
+  - `stasis report` reads the telemetry file directly; it does not require the daemon to be running. Estimates are conservative approximations, not wall-metered measurements.
+
+### Changed
+
+- **Config key rename: `enable_loginctl` → `enable_loginctl_integration`**
+  - Renamed at the global and per-profile level for clarity. The built-in migrator rewrites the legacy `enable_loginctl` key automatically on first launch.
+
 ---
 
 ## [1.3.0] - 2026-06-11
@@ -177,10 +207,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Media monitoring** — the browser-based media bridge has been removed. Stasis now relies exclusively on `pactl` for media detection. `pipewire-pulse` or `pulseaudio` must be installed and available.
-- **`use_loginctl` → `enable_loginctl`** — renamed and moved to the top level under `default:` in the Rune configuration. No longer defined inside a nested block.
+- **`use_loginctl` → `enable_loginctl_integration`** — renamed and moved to the top level under `default:` in the Rune configuration. No longer defined inside a nested block.
   ```rune
   default:
-    enable_loginctl true
+    enable_loginctl_integration true
   end
   ```
 - **Log directory** — logs now live in `~/.local/state/stasis/` (previously `~/.cache/stasis/`), aligning with the XDG Base Directory Specification.

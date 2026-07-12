@@ -118,6 +118,16 @@ impl Daemon {
                     }
                 }
             }
+
+            Action::EnterLowPower => {
+                eventline::info!("low_power: entering (snapshot + apply)");
+                self.low_power.enter();
+            }
+
+            Action::ExitLowPower => {
+                eventline::info!("low_power: exiting (restore snapshot)");
+                self.low_power.exit();
+            }
         }
 
         Ok(())

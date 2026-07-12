@@ -52,7 +52,13 @@ impl Daemon {
         // (ticks, input edges, D-Bus signals) — 256 was wasted reservation.
         let (tx, mut rx) = mpsc::channel::<ManagerMsg>(32);
 
-        if let Err(e) = crate::ipc::server::spawn_ipc_server(tx.clone(), self.verbose).await {
+        if let Err(e) = crate::ipc::server::spawn_ipc_server(
+            tx.clone(),
+            self.watch_tx.subscribe(),
+            self.verbose,
+        )
+        .await
+        {
             eventline::warn!("ipc: failed to start: {}", e);
         }
 
@@ -131,7 +137,26 @@ impl Daemon {
                         ManagerMsg::Event(event) => {
                             let refresh_after = matches!(event, Event::ProfileChanged{..} | Event::PowerChanged{..});
 
+                            // Telemetry: observe suspend/resume events.
+                            self.report_observe_event(&event);
+
+                            // Track display-off state before the manager handles the event.
+                            let dpms_was = self.state.last_dpms_fired_idx().is_some();
+
                             let actions = self.handle_one_event_scoped(event);
+
+                            self.publish_watch_state();
+
+                            // Track display-off state after handling.
+                            self.report_track_display_off(
+                                dpms_was,
+                                self.state.last_dpms_fired_idx().is_some(),
+                            );
+
+                            // Telemetry: observe low-power enter/exit actions.
+                            for action in &actions {
+                                self.report_observe_action(action);
+                            }
 
                             if refresh_after {
                                 self.push_inhibit_rules_from_effective(&tx);
@@ -191,6 +216,7 @@ impl Daemon {
                                     let shown = name.unwrap_or_else(|| "none".to_string());
 
                                     self.push_inhibit_rules_from_effective(&tx);
+                                    self.publish_watch_state();
 
                                     Ok(format!("Profile set: {shown}"))
                                 }
@@ -241,6 +267,7 @@ impl Daemon {
                                             }
 
                                             self.push_inhibit_rules_from_effective(&tx);
+                                            self.publish_watch_state();
 
                                             if desired == "none" {
                                                 Ok("Reloaded (profile missing; switched to none)".to_string())
@@ -267,6 +294,16 @@ impl Daemon {
                 }
             }
         }
+
+        // Explicit safety-net restore before the controller's Drop fires.
+        // Ensures the user's hardware is never left in a reduced power state.
+        if self.low_power.is_active() {
+            eventline::info!("low_power: restoring hardware before shutdown");
+            self.low_power.exit();
+        }
+
+        // Flush any open telemetry episodes so they appear in `stasis report`.
+        self.report_flush();
 
         Ok(())
     }

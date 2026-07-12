@@ -3,6 +3,19 @@
 
 use serde::Serialize;
 
+/// Stable state published by `stasis watch`.
+///
+/// This intentionally excludes timer-derived display details so listeners only
+/// receive a line when a shell-relevant state value actually changes.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WatchEvent {
+    /// One of: waiting, active, inhibited, locked, or manual.
+    pub state: String,
+    pub paused: bool,
+    pub manually_paused: bool,
+    pub profile: String,
+}
+
 /// Snapshot returned from the daemon/manager for `stasis info`.
 ///
 /// - `waybar` is the stable JSON contract.

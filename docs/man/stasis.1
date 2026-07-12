@@ -138,6 +138,16 @@ Display current session information.
 With \fB--json\fR, output machine-readable JSON.
 
 .TP
+.B watch
+Stream the current shell-facing Stasis state as newline-delimited JSON, then
+emit another object whenever it changes. This lets shells react to pause/resume,
+profile changes, lock state, and inhibitor transitions without polling.
+.PP
+Each object has \fBstate\fR (\fBwaiting\fR, \fBactive\fR, \fBinhibited\fR,
+\fBlocked\fR, or \fBmanual\fR), \fBpaused\fR, \fBmanually_paused\fR, and
+\fBprofile\fR fields. The first object is emitted immediately.
+
+.TP
 .BR dump " " [\fIN\fR]
 Print the last \fIN\fR lines of the Stasis log (default: 100, max: 2000).
 
@@ -150,10 +160,24 @@ Only a single token is accepted.
 
 If no argument is provided, or \fBhelp\fR/\fB-h\fR/\fB--help\fR is used, prints usage.
 
+.TP
+.BR report " " [today|week]
+Show a power-saving report aggregating time spent with the display off, in
+hardware low-power mode, and suspended, plus a rough estimated energy savings.
+Default range is \fBtoday\fR.
+
+.PP
+This reads the local telemetry file directly; it does not require the daemon
+to be running. Energy estimates are conservative approximations, not wall-metered
+measurements.
+
 .SH FILES
 .TP
 .I ~/.local/state/stasis/stasis.log
 Default log file location.
+.TP
+.I ~/.local/state/stasis/report.jsonl
+Power-saving episode data used by \fBstasis report\fR.
 .TP
 .I ~/.config/stasis/stasis.rune
 Typical configuration location (packaging may choose another default).
@@ -182,6 +206,9 @@ Switch profile:
 .TP
 Clear profile overlay:
 .B stasis profile none
+.TP
+Watch state changes:
+.B stasis watch
 .TP
 Pause indefinitely:
 .B stasis pause

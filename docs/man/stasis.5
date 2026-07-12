@@ -27,12 +27,15 @@ Profiles may override globals and steps using \fBoverlay\fR or \fBfresh\fR mode.
 Global keys live directly under a config block (typically \fBdefault:\fR or a profile).
 
 .TP
-.B enable_loginctl true|false
+.B enable_loginctl_integration true|false
 Controls whether Stasis integrates with logind/session state to \fItrack\fR
 lock/unlock and related session state for internal scheduling and scripting semantics.
 .PP
-When enabled, Stasis uses logind-derived state as its source of truth for whether the
-session is locked (and for deferring resume behavior until unlock).
+When enabled, Stasis subscribes to logind's \fBLock\fR and \fBUnlock\fR signals on
+the session object, and to \fBPrepareForSleep\fR on the login1 manager.
+.PP
+\fBNote:\fR logind's \fBLockedHint\fR property is tracked \fIseparately\fR and
+always-on (see below); it does not require this flag.
 .PP
 \fBImportant:\fR this does \fInot\fR lock your screen. Locking the screen is always
 done by your configured \fBlock_screen\fR step \fBcommand\fR (e.g. \fBhyprlock\fR) if you set one.
@@ -115,6 +118,27 @@ Setting this to an empty string (\fB""\fR) clears any inherited lid-close action
 Optional command run immediately when the laptop lid opens.
 Setting this to an empty string (\fB""\fR) clears any inherited lid-open action.
 
+.TP
+.B low_power_when_idle true|false
+When true, after the DPMS step fires Stasis applies conservative hardware
+power-saving to supported devices (GPU runtime PM and, for amdgpu, dynamic
+power management). Everything changed is snapshotted first and restored
+\fIexactly\fR on any resume path (activity, unlock, lid open, profile change,
+config reload, or daemon shutdown). Default is \fBfalse\fR.
+
+.PP
+This requires write access to the relevant sysfs files. On most distributions
+that means either running Stasis with elevated privileges or installing a
+\fBudev\fR rule granting write access to the GPU power-control files. If Stasis
+cannot write a file, it skips it and logs a debug message \(em nothing is left
+in a broken state.
+
+.TP
+.B low_power_when_idle_timeout \fISECONDS\fR
+Seconds to wait after the DPMS step fires before entering low-power mode.
+Default is \fB0\fR (fires immediately after DPMS). Only meaningful when
+\fBlow_power_when_idle\fR is \fBtrue\fR.
+
 .SH STEPS AND PLANS
 A plan is a sequence of step blocks. Stasis executes steps strictly in the order
 they appear in the effective configuration.
@@ -159,7 +183,13 @@ Only applies when \fBnotification\fR is set.
 A \fBlock_screen\fR step behaves like a normal step, with extra semantics:
 
 .IP \(bu 2
-If \fBenable_loginctl true\fR, Stasis can track whether the session is currently locked.
+Stasis always checks logind's \fBLockedHint\fR session property at startup and
+watches it for changes via \fBPropertiesChanged\fR. Compositors or lock screens
+that set \fBLockedHint\fR (e.g. a Quickshell fork with the lockhint feature) are
+tracked without requiring \fBenable_loginctl_integration\fR.
+.IP \(bu 2
+If \fBenable_loginctl_integration true\fR, Stasis additionally tracks logind's
+\fBLock\fR and \fBUnlock\fR signals for session lock state.
 .IP \(bu 2
 Lock behavior is lock-centric: if the session is already locked when the lock step
 would run, Stasis advances past it without re-running it.
@@ -276,7 +306,7 @@ A minimal desktop example:
 
 .nf
 default:
-  enable_loginctl true
+  enable_loginctl_integration true
   enable_dbus_inhibit true
   debounce_seconds 5
   notify_before_action true

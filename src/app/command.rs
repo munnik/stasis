@@ -129,6 +129,14 @@ pub async fn run(args: Args) -> Result<(), AnyError> {
             }
         }
 
+        Command::Watch => match crate::ipc::client::watch().await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("stasis: {e}");
+                Ok(())
+            }
+        },
+
         Command::Dump { args } => {
             let mut msg = String::from("dump");
             if !args.is_empty() {
@@ -208,5 +216,29 @@ pub async fn run(args: Args) -> Result<(), AnyError> {
                 Ok(())
             }
         },
+
+        Command::Report { range } => {
+            let r = match range.trim().to_lowercase().as_str() {
+                "today" => crate::core::report::ReportRange::Today,
+                "week" => crate::core::report::ReportRange::Week,
+                other => {
+                    eprintln!(
+                        "stasis report: unknown range '{other}' (expected 'today' or 'week')"
+                    );
+                    return Ok(());
+                }
+            };
+
+            match crate::core::report::build_report(r) {
+                Ok(summary) => {
+                    print!("{}", crate::core::report::render_report(r, &summary));
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("stasis report: {e}");
+                    Ok(())
+                }
+            }
+        }
     }
 }

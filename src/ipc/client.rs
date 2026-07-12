@@ -1,11 +1,51 @@
 // Author: Dustin Pilgrim
 // License: GPL-3.0-only
 
+use std::io::Write as _;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
     time::{Duration, timeout},
 };
+
+/// Print the current state and each later state transition as newline-delimited
+/// JSON. The daemon closes the stream when it stops.
+pub async fn watch() -> Result<(), String> {
+    let path = crate::ipc::socket_path()?;
+    let mut stream = timeout(Duration::from_secs(2), UnixStream::connect(&path))
+        .await
+        .map_err(|_| "timeout connecting to daemon".to_string())?
+        .map_err(|_| {
+            format!(
+                "failed to connect to {}: daemon not running",
+                path.display()
+            )
+        })?;
+
+    timeout(Duration::from_secs(2), stream.write_all(b"watch"))
+        .await
+        .map_err(|_| "timeout writing to daemon".to_string())?
+        .map_err(|e| format!("write failed: {e}"))?;
+    stream
+        .shutdown()
+        .await
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+
+    let mut lines = BufReader::new(stream).lines();
+    while let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|e| format!("read failed: {e}"))?
+    {
+        let mut stdout = std::io::stdout().lock();
+        writeln!(stdout, "{line}").map_err(|e| format!("stdout write failed: {e}"))?;
+        stdout
+            .flush()
+            .map_err(|e| format!("stdout flush failed: {e}"))?;
+    }
+
+    Ok(())
+}
 
 pub async fn send_raw(cmd: &str) -> Result<String, String> {
     let path = crate::ipc::socket_path()?;

@@ -59,7 +59,7 @@ default:
   # Optional: listen for loginctl lock/unlock-session signals (default false)
   # NOTE: this only updates internal state when lock/unlock signals are received;
   # it does not actually run your locker command.
-  #enable_loginctl true
+  #enable_loginctl_integration true
 
   # Optional: listen for session D-Bus inhibit traffic (default true).
   # This gate is not browser-only: browsers, Steam, and other desktop apps can
@@ -126,6 +126,24 @@ default:
   #   prepare_sleep_command "swaylock -f"
   # -----------------------------
   #prepare_sleep_command ""
+
+  # -----------------------------
+  # Hardware low-power mode
+  #
+  # After the DPMS (display-off) step fires, Stasis can apply conservative
+  # power-saving to supported hardware (GPU runtime PM, amdgpu DPM). Everything
+  # it changes is snapshotted and restored EXACTLY on any resume path.
+  #
+  # Requires write access to GPU sysfs power-control files. On most distros you
+  # need either elevated privileges or a udev rule, e.g.:
+  #   /etc/udev/rules.d/99-stasis-gpu-pm.rules:
+  #   SUBSYSTEM=="pci", KERNEL=="0000:01:00.0", ATTR{power/control}="auto"
+  # (adjust the PCI address to your GPU; check `lspci -D`)
+  #
+  # If Stasis can't write a file, it skips it and logs a message.
+  # -----------------------------
+  #low_power_when_idle false
+  #low_power_when_idle_timeout 10
 
   # -----------------------------
   # Lid actions (LAPTOP ONLY)
@@ -214,7 +232,7 @@ default:
   # Optional: listen for loginctl lock/unlock-session signals (default false)
   # NOTE: this only updates internal state when lock/unlock signals are received;
   # it does not actually run your locker command.
-  #enable_loginctl true
+  #enable_loginctl_integration true
 
   # Optional: listen for session D-Bus inhibit traffic (default true).
   # This gate is not browser-only: browsers, Steam, and other desktop apps can

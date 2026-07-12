@@ -8,6 +8,7 @@ pub mod events;
 pub mod info;
 pub mod manager;
 pub mod manager_msg;
+pub mod report;
 pub mod state;
 pub mod utils;
 

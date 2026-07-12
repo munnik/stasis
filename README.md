@@ -144,7 +144,7 @@ Build & install:
 >
 > **Option 1 — Don't daemonize (simplest):** Remove `daemonize = true` or the `-f` flag from your screen locker config.
 >
-> **Option 2 — Use `enable_loginctl` mode (Recommended for daemonizing lockers):**
+> **Option 2 — Use `enable_loginctl_integration` mode (Recommended for daemonizing lockers):**
 > Enable Stasis's `loginctl` mode so it tracks lock state via D-Bus signals from `logind` instead of process lifetime. This requires a small wrapper script:
 > ```bash
 > #!/usr/bin/env bash
@@ -156,7 +156,7 @@ Build & install:
 > Save this as `~/.local/bin/stasis-lock.sh` and make it executable (`chmod +x`). Then use it in your config:
 > ```rune
 > default:
->   enable_loginctl true
+>   enable_loginctl_integration true
 >   
 >   lock_screen:
 >     timeout 300
@@ -170,6 +170,14 @@ Build & install:
 > **D-Bus session startup is required for full D-Bus features.**
 > If you want `enable_dbus_inhibit` and other session-bus driven behavior to work reliably, start your compositor within a real D-Bus session (for example `niri-session`, `dbus-run-session`, or your compositor/distribution's recommended session launcher).
 > If the compositor is not running in a proper session, inhibit monitoring may not activate.
+
+> [!NOTE]
+> **Quickshell `LockedHint` integration.**
+> Stasis always monitors logind's `LockedHint` session property and treats it as a lock-state signal, independent of `enable_loginctl_integration`. This is useful with compositors or lock screens that set `LockedHint` but do not emit logind `Lock`/`Unlock` signals.
+>
+> `LockedHint` support currently requires a Quickshell build that actually sets the property:
+> - **`quickshell-lockhinted-git`** (AUR) — the supported path for now.
+> - **Noctalia's fork** *might* also expose `LockedHint`, but it is **untested** with Stasis and carries no guarantees. Feedback welcome if you try it.
 
 Start the daemon:
 
@@ -205,6 +213,7 @@ Important separation:
 ## CLI Usage
 
     stasis info [--json]
+    stasis watch
     stasis tray
     stasis pause [for <duration> | until <time>]
     stasis resume
@@ -213,6 +222,7 @@ Important separation:
     stasis list actions
     stasis list profiles
     stasis profile <name|none>
+    stasis report [today|week]
     stasis reload
     stasis stop
 
@@ -224,6 +234,34 @@ with `stasis.service` plus the optional `stasis-tray.service`.
 The tray requires a StatusNotifier tray host, such as Waybar's tray module, KDE
 Plasma, or another panel. The daemon remains headless and does not launch the
 tray automatically.
+
+### Event-driven shell integration
+
+`stasis watch` writes one JSON object immediately, then another only when the
+shell-facing state changes. This is intended for Quickshell and other shells
+that need to react to Stasis without polling:
+
+```json
+{"state":"manual","paused":true,"manually_paused":true,"profile":"work"}
+```
+
+`state` is one of `waiting`, `active`, `inhibited`, `locked`, or `manual`.
+The command stays connected until Stasis stops; each object is one line, so a
+long-running process can parse the stream incrementally.
+
+Quickshell can consume it with one long-running process:
+
+```qml
+import Quickshell.Io
+
+Process {
+  running: true
+  command: ["stasis", "watch"]
+  stdout: SplitParser {
+    onRead: message => root.stasis = JSON.parse(message)
+  }
+}
+```
 
 ---
 

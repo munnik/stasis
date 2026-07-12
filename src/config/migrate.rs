@@ -26,6 +26,14 @@ fn looks_like_new_with_use_loginctl(text: &str) -> bool {
     has_default && has_use
 }
 
+fn looks_like_new_with_legacy_loginctl_key(text: &str) -> bool {
+    let has_default = text.lines().any(|l| l.trim_start().starts_with("default:"));
+    let has_legacy_key = text
+        .lines()
+        .any(|l| l.trim_start().starts_with("enable_loginctl "));
+    has_default && has_legacy_key
+}
+
 fn looks_like_new_with_legacy_dbus_inhibit_key(text: &str) -> bool {
     let has_default = text.lines().any(|l| l.trim_start().starts_with("default:"));
     let has_legacy_key = text
@@ -38,9 +46,12 @@ pub fn migrate_in_place(path: &Path) -> Result<MigrateOutcome, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
 
     // New-format rewrites:
-    // - hoist per-step `use_loginctl` into default.enable_loginctl
+    // - hoist per-step `use_loginctl` into default.enable_loginctl_integration
+    // - rename `enable_loginctl` -> `enable_loginctl_integration`
     // - rename legacy `listen_browser_dbus_inhibit` -> `enable_dbus_inhibit`
-    if looks_like_new_with_use_loginctl(&text) || looks_like_new_with_legacy_dbus_inhibit_key(&text)
+    if looks_like_new_with_use_loginctl(&text)
+        || looks_like_new_with_legacy_dbus_inhibit_key(&text)
+        || looks_like_new_with_legacy_loginctl_key(&text)
     {
         let new_text = migrate_new_keys(&text);
 
@@ -109,6 +120,15 @@ fn migrate_new_keys(text: &str) -> String {
             out_lines.push(format!("{indent}enable_dbus_inhibit {val}"));
             continue;
         }
+        if t.starts_with("enable_loginctl ") {
+            let indent = line
+                .chars()
+                .take_while(|c| c.is_ascii_whitespace())
+                .collect::<String>();
+            let val = t.split_whitespace().nth(1).unwrap_or("true");
+            out_lines.push(format!("{indent}enable_loginctl_integration {val}"));
+            continue;
+        }
         if t.starts_with("use_loginctl ") {
             if t.split_whitespace()
                 .nth(1)
@@ -122,15 +142,15 @@ fn migrate_new_keys(text: &str) -> String {
         out_lines.push(line.to_string());
     }
 
-    // If we did not need to insert enable_loginctl, return the rewritten text.
+    // If we did not need to insert enable_loginctl_integration, return the rewritten text.
     if !saw_true {
         return ensure_trailing_newline(out_lines.join("\n"));
     }
 
-    // If enable_loginctl already exists anywhere, don't insert another.
+    // If enable_loginctl_integration already exists anywhere, don't insert another.
     let has_enable = out_lines
         .iter()
-        .any(|l| l.trim_start().starts_with("enable_loginctl "));
+        .any(|l| l.trim_start().starts_with("enable_loginctl_integration "));
     if has_enable {
         return ensure_trailing_newline(out_lines.join("\n"));
     }
@@ -142,7 +162,7 @@ fn migrate_new_keys(text: &str) -> String {
     for l in out_lines {
         rewritten.push(l.clone());
         if !inserted && l.trim_start() == "default:" {
-            rewritten.push("  enable_loginctl true".to_string());
+            rewritten.push("  enable_loginctl_integration true".to_string());
             inserted = true;
         }
     }
@@ -441,10 +461,10 @@ fn emit_new(old: &OldFile) -> String {
         .stasis
         .globals
         .iter()
-        .any(|l| l.key == "enable_loginctl");
+        .any(|l| l.key == "enable_loginctl_integration");
 
     if want_loginctl && !has_enable_already {
-        out.push_str("  enable_loginctl true\n");
+        out.push_str("  enable_loginctl_integration true\n");
     }
 
     emit_globals(&mut out, &old.stasis.globals, 2);
@@ -585,7 +605,7 @@ fn emit_block(out: &mut String, b: &OldBlock, indent: usize) {
 
     // Lock special case:
     // - Old configs sometimes used command="loginctl lock-session" plus lock_command="<locker>"
-    // - New configs: loginctl is global (enable_loginctl); lock_screen.command should be the locker.
+    // - New configs: loginctl integration is global (enable_loginctl_integration); lock_screen.command should be the locker.
     let is_lock = name == "lock_screen";
     if is_lock {
         let cmd_is_loginctl = command

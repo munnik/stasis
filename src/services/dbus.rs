@@ -20,7 +20,7 @@ pub trait EventSink: Send + Sync + 'static {
 
 /// Spawn D-Bus listeners.
 ///
-/// `enable_loginctl` gates all login1-related monitoring:
+/// `enable_loginctl_integration` gates all login1-related monitoring:
 /// - PrepareForSleep (org.freedesktop.login1.Manager)
 /// - Lock/Unlock (org.freedesktop.login1.Session)
 ///
@@ -889,6 +889,85 @@ async fn run_dbus(
             }
         } else {
             eventline::info!("D-Bus: loginctl integration disabled; skipping login1 monitoring");
+        }
+
+        // Always-on LockedHint watcher. Independent of `enable_loginctl_integration`.
+        // Compositors that set logind's LockedHint property (e.g. a Quickshell fork
+        // with the lockhint feature) are tracked here via PropertiesChanged.
+        // Non-fatal: errors are logged and fall through to other monitoring.
+        if let Ok(session_path) = get_current_session_path(sys).await {
+            eventline::info!(
+                "D-Bus: LockedHint watcher monitoring session {}",
+                session_path.as_str()
+            );
+
+            if let Ok(proxy) = Proxy::new(
+                sys,
+                "org.freedesktop.login1",
+                session_path.clone(),
+                "org.freedesktop.login1.Session",
+            )
+            .await
+            {
+                match proxy.get_property::<bool>("LockedHint").await {
+                    Ok(true) => sink.push(Event::SessionLocked { now_ms: now_ms() }),
+                    Ok(false) => {}
+                    Err(e) => {
+                        eventline::warn!("D-Bus: could not read initial LockedHint: {e:?}");
+                    }
+                }
+            }
+
+            let rule = MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .interface("org.freedesktop.DBus.Properties")
+                .and_then(|b| b.member("PropertiesChanged"))
+                .and_then(|b| b.path(session_path.clone()))
+                .map(|b| b.build());
+
+            if let Ok(rule) = rule {
+                match zbus::MessageStream::for_match_rule(rule, sys, None).await {
+                    Ok(mut stream) => {
+                        let sink_lockedhint = sink.clone();
+                        tokio::spawn(async move {
+                            use zbus::zvariant::Value;
+
+                            while let Some(msg) = stream.next().await {
+                                let Ok(msg) = msg else { continue };
+
+                                let body = msg.body();
+                                let parsed: (String, HashMap<String, Value>, Vec<String>) =
+                                    match body.deserialize() {
+                                        Ok(v) => v,
+                                        Err(_) => continue,
+                                    };
+
+                                let (iface, changed, _invalidated) = parsed;
+
+                                if iface != "org.freedesktop.login1.Session" {
+                                    continue;
+                                }
+
+                                if let Some(v) = changed.get("LockedHint") {
+                                    if let Ok(locked) = v.clone().downcast::<bool>() {
+                                        let t = now_ms();
+                                        sink_lockedhint.push(if locked {
+                                            Event::SessionLocked { now_ms: t }
+                                        } else {
+                                            Event::SessionUnlocked { now_ms: t }
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        eventline::warn!(
+                            "D-Bus: could not subscribe to LockedHint PropertiesChanged: {e:?}"
+                        );
+                    }
+                }
+            }
         }
 
         {

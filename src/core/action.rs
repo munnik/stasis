@@ -23,4 +23,12 @@ pub enum Action {
 
     /// Request system suspend (runtime decides command/system call).
     Suspend,
+
+    /// Apply conservative hardware power-saving (GPU runtime PM, amdgpu DPM).
+    /// The daemon snapshots current settings before applying, and restores
+    /// them exactly on the matching ExitLowPower.
+    EnterLowPower,
+
+    /// Restore hardware settings snapshot taken by the prior EnterLowPower.
+    ExitLowPower,
 }

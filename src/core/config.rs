@@ -125,10 +125,18 @@ impl Pattern {
 #[derive(Debug, Clone)]
 pub struct Config {
     // ---- globals ----
-    pub enable_loginctl: bool,
+    pub enable_loginctl_integration: bool,
     pub enable_dbus_inhibit: bool,
     pub pre_suspend_command: Option<String>,
     pub prepare_sleep_command: Option<String>,
+
+    /// When true, Stasis applies conservative hardware power-saving (GPU runtime
+    /// PM, amdgpu DPM) after the DPMS step fires and the idle timeout elapses.
+    /// Snapshot-based: everything changed is restored exactly on any resume path.
+    pub low_power_when_idle: bool,
+
+    /// Seconds to wait after DPMS fires before entering low-power mode.
+    pub low_power_when_idle_timeout: u64,
 
     /// Shell command to run immediately when the lid is closed (if any).
     pub lid_close_action: Option<String>,
@@ -176,10 +184,13 @@ impl Default for Config {
 impl Config {
     pub fn disabled() -> Self {
         Self {
-            enable_loginctl: false,
+            enable_loginctl_integration: false,
             enable_dbus_inhibit: true,
             pre_suspend_command: None,
             prepare_sleep_command: None,
+
+            low_power_when_idle: false,
+            low_power_when_idle_timeout: 0,
 
             lid_close_action: None,
             lid_open_action: None,
@@ -351,10 +362,13 @@ pub struct Profile {
 #[derive(Debug, Clone, Default)]
 pub struct PartialConfig {
     // ---- globals ----
-    pub enable_loginctl: Option<bool>,
+    pub enable_loginctl_integration: Option<bool>,
     pub enable_dbus_inhibit: Option<bool>,
     pub pre_suspend_command: Option<Option<String>>,
     pub prepare_sleep_command: Option<Option<String>>,
+
+    pub low_power_when_idle: Option<bool>,
+    pub low_power_when_idle_timeout: Option<u64>,
 
     /// `None` = no override; `Some(None)` = clear; `Some(Some(cmd))` = set command.
     pub lid_close_action: Option<Option<String>>,
@@ -406,8 +420,8 @@ fn merge_plan(base: &mut Vec<PlanStep>, overlay: Vec<PlanStep>) {
 impl PartialConfig {
     pub fn apply_to(&self, base: &mut Config, mode: ProfileMode) {
         // ---- globals ----
-        if let Some(v) = self.enable_loginctl {
-            base.enable_loginctl = v;
+        if let Some(v) = self.enable_loginctl_integration {
+            base.enable_loginctl_integration = v;
         }
         if let Some(v) = self.enable_dbus_inhibit {
             base.enable_dbus_inhibit = v;
@@ -418,6 +432,13 @@ impl PartialConfig {
         }
         if let Some(v) = &self.prepare_sleep_command {
             base.prepare_sleep_command = v.clone();
+        }
+
+        if let Some(v) = self.low_power_when_idle {
+            base.low_power_when_idle = v;
+        }
+        if let Some(v) = self.low_power_when_idle_timeout {
+            base.low_power_when_idle_timeout = v;
         }
 
         if let Some(v) = &self.lid_close_action {

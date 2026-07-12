@@ -88,6 +88,11 @@ pub struct State {
     // If we resumed while locked (dpms/brightness), defer the remainder until unlock.
     resume_deferred_until_unlock: bool,
 
+    // Low-power (hardware power-down) mode tracking.
+    low_power_armed: bool,
+    low_power_armed_ms: u64,
+    low_power_active: bool,
+
     // Lifetime one-shots (instant steps with timeout=0)
     one_shots_fired: HashSet<OneShotKey>,
 }
@@ -131,6 +136,10 @@ impl State {
             resume_epoch: 0,
             resumed_epoch: 0,
             resume_deferred_until_unlock: false,
+
+            low_power_armed: false,
+            low_power_armed_ms: 0,
+            low_power_active: false,
 
             one_shots_fired: HashSet::new(),
         }
@@ -439,6 +448,38 @@ impl State {
         self.debounce_pending = v;
     }
 
+    // ---------------- low-power mode ----------------
+
+    pub fn low_power_armed(&self) -> bool {
+        self.low_power_armed
+    }
+
+    pub fn low_power_armed_ms(&self) -> u64 {
+        self.low_power_armed_ms
+    }
+
+    pub fn low_power_active(&self) -> bool {
+        self.low_power_active
+    }
+
+    pub fn set_low_power_armed(&mut self, v: bool) {
+        self.low_power_armed = v;
+    }
+
+    pub fn set_low_power_armed_ms(&mut self, t: u64) {
+        self.low_power_armed_ms = t;
+    }
+
+    pub fn set_low_power_active(&mut self, v: bool) {
+        self.low_power_active = v;
+    }
+
+    /// Disarm the low-power timer (does not deactivate active hardware mode;
+    /// that is restored via the ExitLowPower action).
+    pub fn disarm_low_power(&mut self) {
+        self.low_power_armed = false;
+    }
+
     // ---------------- cycle control ----------------
 
     /// Full idle cycle reset (unlocked activity, profile/power transitions, etc.)
@@ -457,6 +498,10 @@ impl State {
 
         // Reset pause timestamp for a fresh cycle.
         self.pause_started_ms = None;
+
+        // Disarm the low-power timer for a fresh cycle. Hardware restore (if
+        // active) is handled by the manager emitting ExitLowPower before reset.
+        self.low_power_armed = false;
     }
 
     /// Restart timers AND rewind to the post-lock start step so the post-lock
@@ -476,6 +521,9 @@ impl State {
 
         // Reset pause timestamp for a restarted segment.
         self.pause_started_ms = None;
+
+        // Disarm the low-power timer when restarting the post-lock segment.
+        self.low_power_armed = false;
     }
 }
 

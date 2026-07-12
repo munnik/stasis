@@ -32,7 +32,15 @@ impl Manager {
 
         match event {
             Event::Tick { .. } => {
+                // If an inhibitor/system pause appeared while we were in
+                // low-power mode, restore hardware immediately so the system
+                // is ready for whatever is keeping it awake.
                 if state.paused() {
+                    if state.low_power_active() {
+                        out.push(Action::ExitLowPower);
+                        state.set_low_power_active(false);
+                    }
+                    state.disarm_low_power();
                     return Ok(out);
                 }
 
@@ -49,6 +57,10 @@ impl Manager {
 
                 self.advance_past_lock_if_needed(state, &cfg);
                 out.extend(self.maybe_fire_next_step(state, &cfg, now_ms));
+
+                // Low-power: fire after the DPMS step has run and the configured
+                // timeout has elapsed since DPMS fired.
+                self.maybe_fire_low_power(state, &cfg, now_ms, &mut out);
             }
 
             Event::UserActivity { .. } => {
@@ -282,6 +294,7 @@ impl Manager {
                 state.set_media_inhibitor_count(0);
                 self.refresh_paused(state, now_ms);
 
+                self.restore_low_power_if_active(state, &mut out);
                 state.reset_idle_cycle(now_ms);
                 state.clear_one_shots();
 
@@ -306,6 +319,7 @@ impl Manager {
                 };
                 state.set_plan_source(src);
 
+                self.restore_low_power_if_active(state, &mut out);
                 state.reset_idle_cycle(now_ms);
                 state.clear_one_shots();
 
@@ -396,6 +410,10 @@ impl Manager {
         now_ms: u64,
         out: &mut Vec<Action>,
     ) {
+        // Restore hardware power state BEFORE running resume commands so the
+        // GPU/boards are back up by the time the display comes on.
+        self.restore_low_power_if_active(state, out);
+
         out.extend(self.resume_commands_for_activity(state, cfg));
 
         if state.is_locked() {
@@ -421,6 +439,49 @@ impl Manager {
         self.cfg_file
             .effective_for(state.active_profile(), state.plan_source())
             .ok_or(Error::InvalidConfig(ConfigError::ProfileNotFound))
+    }
+
+    /// Emit ExitLowPower (and clear tracking) if hardware low-power mode is
+    /// currently active. Called on every activity/resume path so hardware is
+    /// always restored from its snapshot before anything else happens.
+    fn restore_low_power_if_active(&self, state: &mut State, out: &mut Vec<Action>) {
+        if state.low_power_active() {
+            out.push(Action::ExitLowPower);
+            state.set_low_power_active(false);
+        }
+        state.disarm_low_power();
+    }
+
+    /// Arm the low-power timer right after the DPMS step has fired.
+    fn arm_low_power_after_dpms(&self, state: &mut State, cfg: &Config, now_ms: u64) {
+        if cfg.low_power_when_idle && cfg.low_power_when_idle_timeout > 0 {
+            state.set_low_power_armed(true);
+            state.set_low_power_armed_ms(now_ms);
+        }
+    }
+
+    /// On Tick, check whether the armed low-power timer has elapsed and emit
+    /// EnterLowPower if so.
+    fn maybe_fire_low_power(
+        &self,
+        state: &mut State,
+        cfg: &Config,
+        now_ms: u64,
+        out: &mut Vec<Action>,
+    ) {
+        if !state.low_power_armed() || state.low_power_active() {
+            return;
+        }
+
+        let due = state
+            .low_power_armed_ms()
+            .saturating_add(cfg.low_power_when_idle_timeout.saturating_mul(1000));
+
+        if now_ms >= due {
+            out.push(Action::EnterLowPower);
+            state.set_low_power_active(true);
+            state.set_low_power_armed(false);
+        }
     }
 
     fn refresh_paused(&self, state: &mut State, now_ms: u64) {
@@ -731,6 +792,12 @@ impl Manager {
             let is_lock = Self::is_lock_step(step);
 
             state.mark_step_fired(idx, is_dpms, is_brightness, is_lock, arms_resume);
+
+            // Arm the low-power timer as soon as the DPMS (or early-dpms) step
+            // has fired — the timer counts from this moment.
+            if is_dpms {
+                self.arm_low_power_after_dpms(state, cfg, now_ms);
+            }
         }
         out.extend(emitted);
 

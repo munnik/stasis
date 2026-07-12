@@ -131,13 +131,18 @@ fn parse_config_file(rc: &RuneConfig) -> Result<ConfigFile, String> {
             let mut cfg = Config::disabled();
 
             // Global loginctl integration toggle (lock/unlock monitoring via login1).
-            cfg.enable_loginctl = rc.get_or("default.enable_loginctl", false);
+            cfg.enable_loginctl_integration =
+                rc.get_or("default.enable_loginctl_integration", false);
             // Session D-Bus inhibit monitor toggle.
             cfg.enable_dbus_inhibit = rc.get_or("default.enable_dbus_inhibit", true);
 
             // scalars/lists under default
             cfg.pre_suspend_command = opt_nullable_string(rc, "default.pre_suspend_command")?;
             cfg.prepare_sleep_command = opt_nullable_string(rc, "default.prepare_sleep_command")?;
+
+            cfg.low_power_when_idle = rc.get_or("default.low_power_when_idle", false);
+            cfg.low_power_when_idle_timeout =
+                rc.get_or("default.low_power_when_idle_timeout", 0u64);
 
             cfg.monitor_media = rc.get_or("default.monitor_media", false);
             cfg.ignore_remote_media = rc.get_or("default.ignore_remote_media", false);
@@ -226,10 +231,12 @@ fn parse_plan_block(
         matches!(
             norm,
             "mode"
-                | "enable_loginctl"
+                | "enable_loginctl_integration"
                 | "enable_dbus_inhibit"
                 | "pre_suspend_command"
                 | "prepare_sleep_command"
+                | "low_power_when_idle"
+                | "low_power_when_idle_timeout"
                 | "monitor_media"
                 | "ignore_remote_media"
                 | "media_blacklist"
@@ -272,10 +279,10 @@ fn parse_plan_block(
             );
         }
 
-        // Legacy key guard: use_loginctl removed (global enable_loginctl replaces it).
+        // Legacy key guard: use_loginctl removed (global enable_loginctl_integration replaces it).
         if rc.has(&format!("{base}.use_loginctl")) {
             eventline::warn!(
-                "config: `{}` uses use-loginctl, but use-loginctl was removed; use `default.enable_loginctl` instead",
+                "config: `{}` uses use-loginctl, but use-loginctl was removed; use `default.enable_loginctl_integration` instead",
                 base
             );
         }
@@ -389,11 +396,16 @@ fn parse_profiles(rc: &RuneConfig) -> Result<Vec<Profile>, String> {
         let mut pc = PartialConfig::default();
 
         // globals (profile-level overrides)
-        pc.enable_loginctl = opt_bool(rc, format!("{name}.enable_loginctl"))?;
+        pc.enable_loginctl_integration =
+            opt_bool(rc, format!("{name}.enable_loginctl_integration"))?;
         pc.enable_dbus_inhibit = opt_bool(rc, format!("{name}.enable_dbus_inhibit"))?;
         pc.pre_suspend_command = opt_nullable_string2(rc, format!("{name}.pre_suspend_command"))?;
         pc.prepare_sleep_command =
             opt_nullable_string2(rc, format!("{name}.prepare_sleep_command"))?;
+
+        pc.low_power_when_idle = opt_bool(rc, format!("{name}.low_power_when_idle"))?;
+        pc.low_power_when_idle_timeout =
+            opt_u64(rc, format!("{name}.low_power_when_idle_timeout"))?;
 
         pc.monitor_media = opt_bool(rc, format!("{name}.monitor_media"))?;
         pc.ignore_remote_media = opt_bool(rc, format!("{name}.ignore_remote_media"))?;
@@ -664,10 +676,18 @@ fn log_config_debug(cfg_file: &ConfigFile) {
     let cfg = &cfg_file.default;
 
     eventline::debug!("Parsed config:");
-    eventline::debug!("  enable_loginctl = {:?}", cfg.enable_loginctl);
+    eventline::debug!(
+        "  enable_loginctl_integration = {:?}",
+        cfg.enable_loginctl_integration
+    );
     eventline::debug!("  enable_dbus_inhibit = {:?}", cfg.enable_dbus_inhibit);
     eventline::debug!("  pre_suspend_command = {:?}", cfg.pre_suspend_command);
     eventline::debug!("  prepare_sleep_command = {:?}", cfg.prepare_sleep_command);
+    eventline::debug!(
+        "  low_power_when_idle = {} (timeout {}s)",
+        cfg.low_power_when_idle,
+        cfg.low_power_when_idle_timeout
+    );
 
     eventline::debug!("  lid_close_action = {:?}", cfg.lid_close_action);
     eventline::debug!("  lid_open_action  = {:?}", cfg.lid_open_action);

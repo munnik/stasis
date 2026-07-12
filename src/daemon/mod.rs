@@ -15,9 +15,12 @@ use crate::core::{
 
 use std::path::PathBuf;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
+use crate::core::info::WatchEvent;
+use crate::core::report::{EpisodeKind, ReportRecorder};
 use crate::services::dbus::EventSink;
+use crate::services::low_power::LowPowerController;
 
 type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -47,10 +50,20 @@ pub struct Daemon {
     enable_loginctl: bool,
     enable_dbus_inhibit: bool,
 
+    /// Conservative hardware power-down controller for the low-power idle phase.
+    /// Snapshot/restore based; restores exactly what it changed on any resume.
+    low_power: LowPowerController,
+
+    /// Power-saving episode recorder for `stasis report`.
+    report: ReportRecorder,
+
     chassis: crate::core::utils::ChassisKind,
     bad_profile_logged: bool,
 
     verbose: bool,
+
+    /// Latest shell-facing state for persistent IPC watchers.
+    watch_tx: watch::Sender<WatchEvent>,
 }
 
 impl Daemon {
@@ -98,11 +111,11 @@ impl Daemon {
         let ignore_remote_media = effective.ignore_remote_media;
         let media_blacklist = effective.media_blacklist.clone();
 
-        let enable_loginctl = effective.enable_loginctl;
+        let enable_loginctl_integration = effective.enable_loginctl_integration;
         let enable_dbus_inhibit = effective.enable_dbus_inhibit;
 
         eventline::debug!(
-            "daemon: chassis={:?}, plan_src={:?}, active_profile={:?}, monitor_media={}, ignore_remote_media={}, media_blacklist_len={}, inhibit_apps_len={}, enable_loginctl={}, enable_dbus_inhibit={}, config_path={}",
+            "daemon: chassis={:?}, plan_src={:?}, active_profile={:?}, monitor_media={}, ignore_remote_media={}, media_blacklist_len={}, inhibit_apps_len={}, enable_loginctl_integration={}, enable_dbus_inhibit={}, config_path={}",
             chassis,
             plan_src,
             cfg_file.active_profile,
@@ -110,7 +123,7 @@ impl Daemon {
             ignore_remote_media,
             media_blacklist.len(),
             inhibit_apps.len(),
-            enable_loginctl,
+            enable_loginctl_integration,
             enable_dbus_inhibit,
             config_path.display(),
         );
@@ -126,8 +139,11 @@ impl Daemon {
 
         state.set_active_profile(cfg_file.active_profile.clone());
 
+        let manager = Manager::new(cfg_file);
+        let (watch_tx, _) = watch::channel(manager.watch_event(&state));
+
         Self {
-            manager: Manager::new(cfg_file),
+            manager,
             state,
             config_path,
             inhibit_apps,
@@ -135,11 +151,14 @@ impl Daemon {
             ignore_remote_media,
             media_blacklist,
             inhibit_epoch: 0,
-            enable_loginctl,
+            enable_loginctl: enable_loginctl_integration,
             enable_dbus_inhibit,
+            low_power: LowPowerController::new(),
+            report: ReportRecorder::new(),
             chassis,
             bad_profile_logged: false,
             verbose,
+            watch_tx,
         }
     }
 
@@ -221,5 +240,57 @@ impl Daemon {
         } else {
             eventline::error!("handle_event failed: {:?}", e);
         }
+    }
+
+    /// Publish only semantic changes, never timer/countdown churn.
+    fn publish_watch_state(&self) {
+        let next = self.manager.watch_event(&self.state);
+        self.watch_tx.send_if_modified(|current| {
+            if *current == next {
+                false
+            } else {
+                *current = next;
+                true
+            }
+        });
+    }
+
+    // ---------------- telemetry helpers ----------------
+
+    /// Record suspend/resume episodes from events before the manager consumes them.
+    fn report_observe_event(&mut self, event: &Event) {
+        match event {
+            Event::PrepareForSleep { now_ms } => {
+                self.report.start(EpisodeKind::Suspend, *now_ms);
+            }
+            Event::ResumedFromSleep { now_ms } => {
+                self.report.end(EpisodeKind::Suspend, *now_ms);
+            }
+            _ => {}
+        }
+    }
+
+    /// Record low-power episodes from actions returned by the manager.
+    fn report_observe_action(&mut self, action: &Action) {
+        let now = crate::core::utils::now_ms();
+        match action {
+            Action::EnterLowPower => self.report.start(EpisodeKind::LowPower, now),
+            Action::ExitLowPower => self.report.end(EpisodeKind::LowPower, now),
+            _ => {}
+        }
+    }
+
+    /// Track display-off (DPMS) episodes via state transitions.
+    fn report_track_display_off(&mut self, was_off: bool, is_off: bool) {
+        let now = crate::core::utils::now_ms();
+        if !was_off && is_off {
+            self.report.start(EpisodeKind::DisplayOff, now);
+        } else if was_off && !is_off {
+            self.report.end(EpisodeKind::DisplayOff, now);
+        }
+    }
+
+    fn report_flush(&mut self) {
+        self.report.flush(crate::core::utils::now_ms());
     }
 }

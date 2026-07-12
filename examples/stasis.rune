@@ -17,7 +17,7 @@
 # --------------------------------------------------------------------
 default:
   # ----- Global knobs (these DO get overridden by profiles) -----
-  enable_loginctl false
+  enable_loginctl_integration false
   enable_dbus_inhibit true
   pre_suspend_command None
   monitor_media true
@@ -27,6 +27,13 @@ default:
   # Shell command to run immediately when logind emits PrepareForSleep(true).
   # Unlike `pre_suspend_command`, this triggers when sleep is initiated externally.
   # prepare_sleep_command "hyprlock"
+
+  # Hardware low-power mode: after the DPMS step fires, wait this many seconds
+  # then apply conservative GPU power-saving (runtime PM + amdgpu DPM).
+  # Everything changed is snapshotted and restored exactly on resume.
+  # Requires write access to GPU sysfs (udev rule or elevated privileges).
+  #low_power_when_idle false
+  #low_power_when_idle_timeout 10
 
   # Lid actions (optional, laptop only)
   #
@@ -197,7 +204,7 @@ work:
   mode "overlay"
 
   # Override globals (example: longer debounce, keep media monitoring)
-  enable_loginctl true
+  enable_loginctl_integration true
   enable_dbus_inhibit true
   debounce_seconds 10
   monitor_media true

@@ -4,12 +4,16 @@
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixListener,
-    sync::mpsc,
+    sync::{mpsc, watch},
 };
 
-use crate::core::manager_msg::ManagerMsg;
+use crate::core::{info::WatchEvent, manager_msg::ManagerMsg};
 
-pub async fn spawn_ipc_server(tx: mpsc::Sender<ManagerMsg>, verbose: bool) -> Result<(), String> {
+pub async fn spawn_ipc_server(
+    tx: mpsc::Sender<ManagerMsg>,
+    watch_rx: watch::Receiver<WatchEvent>,
+    verbose: bool,
+) -> Result<(), String> {
     let path = crate::ipc::socket_path()?;
 
     if let Some(parent) = path.parent() {
@@ -35,6 +39,7 @@ pub async fn spawn_ipc_server(tx: mpsc::Sender<ManagerMsg>, verbose: bool) -> Re
             };
 
             let tx = tx.clone();
+            let watch_rx = watch_rx.clone();
             tokio::spawn(async move {
                 // Read the whole request (client must shutdown its write-half)
                 let mut buf = Vec::new();
@@ -47,6 +52,13 @@ pub async fn spawn_ipc_server(tx: mpsc::Sender<ManagerMsg>, verbose: bool) -> Re
                 if cmd.is_empty() {
                     let _ = stream.write_all(b"ERROR: empty command").await;
                     let _ = stream.shutdown().await; // close response
+                    return;
+                }
+
+                if cmd == "watch" {
+                    if let Err(e) = stream_watch(stream, watch_rx).await {
+                        eventline::debug!("ipc: watch stream ended: {e}");
+                    }
                     return;
                 }
 
@@ -70,4 +82,24 @@ pub async fn spawn_ipc_server(tx: mpsc::Sender<ManagerMsg>, verbose: bool) -> Re
     });
 
     Ok(())
+}
+
+async fn stream_watch(
+    mut stream: tokio::net::UnixStream,
+    mut watch_rx: watch::Receiver<WatchEvent>,
+) -> std::io::Result<()> {
+    loop {
+        let event = watch_rx.borrow_and_update().clone();
+        let Ok(line) = serde_json::to_string(&event) else {
+            eventline::warn!("ipc: could not encode watch event");
+            return Ok(());
+        };
+
+        stream.write_all(line.as_bytes()).await?;
+        stream.write_all(b"\n").await?;
+
+        if watch_rx.changed().await.is_err() {
+            return Ok(());
+        }
+    }
 }

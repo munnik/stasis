@@ -57,6 +57,25 @@ fn enter_idle(mgr: &mut Manager, state: &mut State, now_ms: u64) {
 }
 
 #[test]
+fn watch_event_reports_only_shell_facing_state() {
+    let mgr = Manager::new(cfg_with_plan(vec![]));
+    let mut state = State::new(0);
+
+    assert_eq!(mgr.watch_event(&state).state, "waiting");
+    assert_eq!(mgr.watch_event(&state).profile, "default");
+
+    state.set_manually_paused(true);
+    state.set_paused(true);
+    state.set_active_profile(Some("work".to_string()));
+
+    let event = mgr.watch_event(&state);
+    assert_eq!(event.state, "manual");
+    assert!(event.paused);
+    assert!(event.manually_paused);
+    assert_eq!(event.profile, "work");
+}
+
+#[test]
 fn per_step_timers_chain_from_previous_fire() {
     let plan = vec![
         step(PlanStepKind::Startup, 5, "a"),
@@ -380,4 +399,109 @@ fn browser_inhibit_stays_active_until_explicit_inactive_edge() {
             command: "dpms".to_string()
         }]
     );
+}
+
+#[test]
+fn low_power_fires_after_dpms_then_timeout() {
+    let plan = vec![
+        step(PlanStepKind::Dpms, 1, "dpms"),
+        step(PlanStepKind::Suspend, 100, "suspend"),
+    ];
+
+    let mut cfg_file = cfg_with_plan(plan);
+    cfg_file.default.low_power_when_idle = true;
+    cfg_file.default.low_power_when_idle_timeout = 5;
+
+    let mut mgr = Manager::new(cfg_file);
+    let mut state = State::new(0);
+    state.set_plan_source(PlanSource::Desktop);
+    enter_idle(&mut mgr, &mut state, 0);
+
+    // Fire the DPMS step at 1000ms.
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 1000 })
+        .unwrap();
+    assert_eq!(
+        actions,
+        vec![Action::RunCommand {
+            command: "dpms".to_string()
+        }]
+    );
+    assert!(state.low_power_armed());
+
+    // Low power should NOT fire before the 5s timeout (armed at 1000ms, due 6000ms).
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 5999 })
+        .unwrap();
+    assert!(actions.is_empty());
+
+    // Fires exactly at the timeout boundary.
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 6000 })
+        .unwrap();
+    assert_eq!(actions, vec![Action::EnterLowPower]);
+    assert!(state.low_power_active());
+    assert!(!state.low_power_armed());
+}
+
+#[test]
+fn low_power_restores_before_resume_command_on_activity() {
+    let plan = vec![
+        step(PlanStepKind::Dpms, 1, "dpms"),
+        step(PlanStepKind::Suspend, 100, "suspend"),
+    ];
+
+    let mut cfg_file = cfg_with_plan(plan);
+    cfg_file.default.low_power_when_idle = true;
+    cfg_file.default.low_power_when_idle_timeout = 5;
+
+    let mut mgr = Manager::new(cfg_file);
+    let mut state = State::new(0);
+    state.set_plan_source(PlanSource::Desktop);
+    enter_idle(&mut mgr, &mut state, 0);
+
+    // Fire DPMS + enter low power.
+    let _ = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 1000 })
+        .unwrap();
+    let _ = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 6000 })
+        .unwrap();
+    assert!(state.low_power_active());
+
+    // Activity must restore hardware FIRST, then any resume commands.
+    let actions = mgr
+        .handle_event(
+            &mut state,
+            Event::UserActivity {
+                kind: ActivityKind::Any,
+                now_ms: 7000,
+            },
+        )
+        .unwrap();
+
+    assert!(!state.low_power_active());
+    assert_eq!(actions.first(), Some(&Action::ExitLowPower));
+}
+
+#[test]
+fn low_power_disabled_never_fires() {
+    let plan = vec![step(PlanStepKind::Dpms, 1, "dpms")];
+
+    let cfg_file = cfg_with_plan(plan);
+
+    let mut mgr = Manager::new(cfg_file);
+    let mut state = State::new(0);
+    state.set_plan_source(PlanSource::Desktop);
+    enter_idle(&mut mgr, &mut state, 0);
+
+    let _ = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 1000 })
+        .unwrap();
+
+    // Even far in the future, no EnterLowPower when disabled.
+    let actions = mgr
+        .handle_event(&mut state, Event::Tick { now_ms: 1_000_000 })
+        .unwrap();
+    assert!(actions.iter().all(|a| !matches!(a, Action::EnterLowPower)));
 }

@@ -68,6 +68,9 @@ pub enum Command {
         json: bool,
     },
 
+    #[command(about = "Stream state and profile changes as newline-delimited JSON")]
+    Watch,
+
     #[command(about = "Dump recent log lines", disable_help_flag = true)]
     Dump {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -81,5 +84,11 @@ pub enum Command {
     Profile {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+
+    #[command(about = "Show power-saving report (today or week)")]
+    Report {
+        #[arg(default_value = "today", help = "Time window: 'today' or 'week'")]
+        range: String,
     },
 }
