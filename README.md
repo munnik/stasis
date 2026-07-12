@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Keep your session in perfect balance—automatically preventing idle when it matters, allowing it when it doesn't.
+  Keep your session balanced by preventing idle when you are busy and letting it happen when you are not.
 </p>
 
 <p align="center">
@@ -138,13 +138,13 @@ Build & install:
 
 > [!WARNING]
 > **Screen lockers must not be configured to daemonize.**
-> Stasis tracks lock state by waiting for the screen locker process to exit. If your locker is set to daemonize (e.g. `swaylock -f` / `daemonize = true`, or a similar option in other lockers), it will detach from stasis immediately and stasis will interpret this as the screen already being unlocked — causing it to loop back to the first step of your plan.
+> Stasis tracks lock state by waiting for the screen locker process to exit. If your locker daemonizes (for example, `swaylock -f` or `daemonize = true`), it detaches from Stasis immediately. Stasis then treats the screen as unlocked and starts your plan over from the first step.
 >
-> You can confirm this is the issue with `stasis dump` — if the `resume` step fires almost immediately after `lock`, your locker is daemonizing.
+> You can confirm this with `stasis dump`. If the `resume` step fires almost immediately after `lock`, your locker is daemonizing.
 >
-> **Option 1 — Don't daemonize (simplest):** Remove `daemonize = true` or the `-f` flag from your screen locker config.
+> **Option 1: do not daemonize.** Remove `daemonize = true` or the `-f` flag from your screen locker config.
 >
-> **Option 2 — Use `enable_loginctl_integration` mode (Recommended for daemonizing lockers):**
+> **Option 2: use `enable_loginctl_integration` for a daemonizing locker.**
 > Enable Stasis's `loginctl` mode so it tracks lock state via D-Bus signals from `logind` instead of process lifetime. This requires a small wrapper script:
 > ```bash
 > #!/usr/bin/env bash
@@ -176,8 +176,8 @@ Build & install:
 > Stasis always monitors logind's `LockedHint` session property and treats it as a lock-state signal, independent of `enable_loginctl_integration`. This is useful with compositors or lock screens that set `LockedHint` but do not emit logind `Lock`/`Unlock` signals.
 >
 > `LockedHint` support currently requires a Quickshell build that actually sets the property:
-> - **`quickshell-lockhinted-git`** (AUR) — the supported path for now.
-> - **Noctalia's fork** *might* also expose `LockedHint`, but it is **untested** with Stasis and carries no guarantees. Feedback welcome if you try it.
+> - **`quickshell-lockhinted-git`** (AUR) is the supported option for now.
+> - **Noctalia's fork** and other Quickshell-based projects might also expose `LockedHint`, but they have not been tested with Stasis yet. Let us know if you try one.
 
 Start the daemon:
 
